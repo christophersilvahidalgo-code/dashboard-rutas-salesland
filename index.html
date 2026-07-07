@@ -58,6 +58,15 @@
     border-radius:8px;padding:7px 14px;font-size:.8rem;font-weight:700;cursor:pointer;transition:opacity .2s;white-space:nowrap}
   .sync-btn:hover{opacity:.82}
   .sync-btn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* FIX: estos botones usan un fondo neutro (var(--select-bg)) que cambia con el tema
+     (claro/oscuro/degradado). Antes heredaban color:#fff de .sync-btn, así que en fondos
+     claros el texto blanco se volvía invisible. Ahora usan var(--text), que ya se adapta
+     automáticamente a cada tema. */
+  .btn-ghost{background:var(--select-bg);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:7px 14px;font-size:.8rem;font-weight:700;cursor:pointer;
+    transition:all .2s;white-space:nowrap}
+  .btn-ghost:hover{border-color:var(--accent2);color:var(--accent2)}
   #sync-status{font-size:.72rem;color:var(--text2)}
 
   /* ── PALETTE + BG BARS ── */
@@ -255,27 +264,18 @@
   <span class="tool-label">🔗 Google Sheet:</span>
   <input type="text" id="gsheet-url" placeholder="Pega el link CSV publicado del Google Sheet…">
   <button class="sync-btn" id="gsheet-connect" onclick="connectGSheet()">Conectar</button>
-  <button class="sync-btn" id="gsheet-pause" onclick="toggleGSheetAutoRefresh()" style="background:var(--select-bg);border:1px solid var(--border);display:none">⏸️ Pausar auto-actualización</button>
+  <button class="btn-ghost" id="gsheet-pause" onclick="toggleGSheetAutoRefresh()" style="display:none">⏸️ Pausar auto-actualización</button>
   <span id="sync-status"></span>
   <div class="status-pill">
     <div class="status-dot" id="status-dot"></div>
     <span id="status-text">Sin datos</span>
   </div>
   <div class="toolbar-sep"></div>
-  <button class="sync-btn" id="ctrlbar-toggle" style="background:var(--select-bg);border:1px solid var(--border)" onclick="toggleCtrlBar()">🧰 Ocultar herramientas</button>
+  <button class="btn-ghost" id="ctrlbar-toggle" onclick="toggleCtrlBar()">🧰 Ocultar herramientas</button>
 </div>
 
 <div class="ctrl-bar" id="ctrl-bar">
-  <label>🎨 Tipo de paleta:</label>
-  <div class="chip-row" id="paltype-row">
-    <button class="chip active" data-ptype="categorica" onclick="setPalType('categorica',this)">🔷 Categórica</button>
-    <button class="chip" data-ptype="secuencial" onclick="setPalType('secuencial',this)">📶 Secuencial</button>
-    <button class="chip" data-ptype="divergente" onclick="setPalType('divergente',this)">⇔ Divergente</button>
-  </div>
-
-  <div class="ctrl-sep"></div>
-
-  <label>🎚️ Escala:</label>
+  <label>🎨 Paleta corporativa:</label>
   <div class="chip-row" id="palvariant-row"></div>
 
   <div class="ctrl-sep"></div>
@@ -384,37 +384,22 @@ Chart.register(ChartDataLabels);
 // ── PALETTES ────────────────────────────────────────────────────────────────
 // Sistema de paletas basado en tipos reales de escalas de datos:
 //  · Categórica → colores distintos, sin orden, para identificar categorías (ciudad, medio, solicitante...)
-//  · Secuencial → un solo color en degradado, de más intenso a más claro, para resaltar magnitud/ranking
-//  · Divergente → degradado entre dos colores que se alejan de un punto neutro, para resaltar polaridad
+//
+// FIX: se eliminaron las categorías "Secuencial" y "Divergente" (y sus paletas de
+// degradado) porque el dashboard es para un informe corporativo y solo se necesita
+// distinguir categorías, no representar magnitud con intensidad de color.
+// Además, las paletas "Set2/Tableau/Bold/Vívida" originales tenían tonos muy
+// saturados/brillantes (rojos, amarillos puros, magentas neón) poco apropiados
+// para un reporte corporativo. Se reemplazan por 3 paletas con tonos sobrios,
+// desaturados y de aspecto "ejecutivo" (azules grafito, verdes salvia, tierras,
+// grises azulados), manteniendo suficiente contraste entre colores vecinos.
 const PALETTE_CATALOG = {
   categorica: {
     label:'Categórica',
-    // Cada variante trae 20 colores (antes 12) para que, incluso en los gráficos
-    // con más categorías (ej. Top Ciudades con 12 barras), nunca se repita un
-    // color por quedarse corta la lista. `enforceMinToneDiff` además revisa que
-    // dos colores vecinos no queden con luminosidad parecida, así que la
-    // diversidad se nota aunque haya muchas categorías a la vez.
     variants:{
-      set2:    {label:'Set2',     colors:['#4C9F70','#E67E22','#5B84B1','#C0392B','#8E44AD','#F1C40F','#16A085','#D35400','#2C3E50','#7F8C8D','#27AE60','#2980B9','#C2185B','#00838F','#8D6E63','#7CB342','#5E35B1','#F4511E','#546E7A','#AFB42B']},
-      tableau: {label:'Tableau',  colors:['#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F','#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC','#86BCB6','#D37295','#499894','#B6992D','#8CD17D','#F1CE63','#D4A6C8','#FABFD2','#79706E','#6B4C9A']},
-      bold:    {label:'Bold',     colors:['#7F3C8D','#11A579','#3969AC','#F2B701','#E73F74','#80BA5A','#E68310','#008695','#CF1C90','#f97b72','#4b4b8f','#a5aa99','#e58606','#5d69b1','#52bca3','#99c945','#cc61b0','#24796c','#daa51b','#2f8ac4']},
-      vivid:   {label:'Vívida',   colors:['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4','#f032e6','#bfef45','#fabed4','#469990','#dcbeff','#9A6324','#800000','#aaffc3','#808000','#ffd8b1','#000075','#a9a9a9','#ffe119','#000000']},
-    }
-  },
-  secuencial: {
-    label:'Secuencial',
-    variants:{
-      azul:  {label:'Azules', base:'#0d6efd'},
-      verde: {label:'Verdes', base:'#0f9d58'},
-      ambar: {label:'Ámbar',  base:'#e67e22'},
-    }
-  },
-  divergente: {
-    label:'Divergente',
-    variants:{
-      rojoverde:   {label:'Rojo–Verde',     low:'#d7263d', high:'#2e8b57'},
-      moradoverde: {label:'Púrpura–Verde',  low:'#8e44ad', high:'#27ae60'},
-      naranjaazul: {label:'Naranja–Azul',   low:'#e67e22', high:'#2980b9'},
+      corporativo: {label:'Corporativo Azul', colors:['#2C3E50','#4A6FA5','#5B8C7E','#8B7355','#6E5773','#A67C52','#546A76','#7C9885','#9A6A6A','#5C6B73','#8C8577','#4F6D7A','#B08968','#6B818C','#7D6B7D','#5A7684','#9C8AA5','#7A8B99','#4A5859','#8F9779']},
+      ejecutivo:   {label:'Ejecutivo Grafito', colors:['#1B263B','#415A77','#778DA9','#5C677D','#2B2D42','#6D6875','#4A4E69','#9A8C98','#495867','#577399','#425563','#67697C','#8A817C','#463F3A','#8B8C89','#BCB8B1','#3E5C64','#7A6C5D','#5E4B4B','#556270']},
+      sobrio:      {label:'Sobrio Tierra',     colors:['#1F4E5F','#5B7B7A','#8E9775','#C9A66B','#A45C40','#6E4555','#3B6064','#87A196','#D1BB9E','#9C6B4E','#5C4742','#B58B5E','#3E5C50','#7A6C5D','#A4747A','#556B67','#8C7853','#4D4A45','#6B7B8C','#997B66']},
     }
   }
 };
@@ -435,7 +420,7 @@ const ESTADO_FIXED = (function(){
 })();
 
 let currentPalType = 'categorica';
-let currentPalVariant = 'set2';
+let currentPalVariant = 'corporativo';
 
 // ── Interpolación de color (hex) ─────────────────────────────────────────────
 function hexToRgb(hex){
@@ -498,37 +483,10 @@ function enforceMinToneDiff(colors, minDiff=40){
   return hsl.map(([h,s,l])=>hslToHex(h, Math.max(s,42), l));
 }
 
-// Secuencial: primer valor = color base (más intenso), últimos = más claros.
-// Ideal para rankings (top ciudades, top tipos) donde el orden SÍ importa.
-function sequentialScale(base,n){
-  const arr=[];
-  for(let i=0;i<n;i++){
-    const t = n<=1?0:(i/(n-1))*0.78;
-    arr.push(lerpColor(base,'#eef2f8',t));
-  }
-  return arr;
-}
-
-// Divergente: primera mitad interpola hacia un color bajo, segunda mitad hacia un color alto,
-// pasando por un punto neutro. Útil para resaltar polaridad (ej. por debajo/encima del promedio).
-function divergingScale(low,high,n){
-  const mid='#f2f2f2';
-  const arr=[];
-  for(let i=0;i<n;i++){
-    const t = n<=1?0.5:i/(n-1);
-    arr.push(t<=0.5 ? lerpColor(low,mid,t/0.5) : lerpColor(mid,high,(t-0.5)/0.5));
-  }
-  return arr;
-}
-
 function generatePalette(n){
-  const type=PALETTE_CATALOG[currentPalType];
-  const variant=type.variants[currentPalVariant] || Object.values(type.variants)[0];
-  if(currentPalType==='secuencial') return sequentialScale(variant.base,n);
-  if(currentPalType==='divergente') return divergingScale(variant.low,variant.high,n);
-  // Nota: en secuencial/divergente la cercanía de tono entre pasos ES la señal (magnitud/orden),
-  // así que ahí no se fuerza contraste. En categórica sí, porque cada color debe leerse
-  // como una categoría distinta.
+  // FIX: al quedar solo la categoría "Categórica" (se eliminaron Secuencial y
+  // Divergente), esta función ya no necesita ramas por tipo de paleta.
+  const variant=PALETTE_CATALOG.categorica.variants[currentPalVariant] || Object.values(PALETTE_CATALOG.categorica.variants)[0];
   const arr=[]; for(let i=0;i<n;i++) arr.push(variant.colors[i%variant.colors.length]);
   return enforceMinToneDiff(arr, 40);
 }
@@ -537,31 +495,14 @@ function renderVariantChips(){
   const row=document.getElementById('palvariant-row');
   if(!row) return;
   row.innerHTML='';
-  const type=PALETTE_CATALOG[currentPalType];
-  Object.entries(type.variants).forEach(([key,v])=>{
+  Object.entries(PALETTE_CATALOG.categorica.variants).forEach(([key,v])=>{
     const btn=document.createElement('button');
     btn.className='chip'+(key===currentPalVariant?' active':'');
     btn.onclick=()=>setPalVariant(key,btn);
-    let swatch;
-    if(currentPalType==='categorica'){
-      swatch=`<div class="chip-dots">${v.colors.slice(0,4).map(c=>`<div class="chip-dot" style="background:${c}"></div>`).join('')}</div>`;
-    }else if(currentPalType==='secuencial'){
-      swatch=`<div class="bg-swatch" style="background:linear-gradient(90deg,${v.base},${v.base}22)"></div>`;
-    }else{
-      swatch=`<div class="bg-swatch" style="background:linear-gradient(90deg,${v.low},#f2f2f2,${v.high})"></div>`;
-    }
+    const swatch=`<div class="chip-dots">${v.colors.slice(0,4).map(c=>`<div class="chip-dot" style="background:${c}"></div>`).join('')}</div>`;
     btn.innerHTML=swatch+v.label;
     row.appendChild(btn);
   });
-}
-
-function setPalType(type,btn){
-  currentPalType=type;
-  document.querySelectorAll('#paltype-row .chip').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  currentPalVariant=Object.keys(PALETTE_CATALOG[type].variants)[0];
-  renderVariantChips();
-  if(allData.length) renderDashboard();
 }
 
 function setPalVariant(key,btn){
@@ -721,7 +662,13 @@ function lum(hex){
   const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
   return (0.299*r+0.587*g+0.114*b)/255;
 }
-function autoLabel(bg){ return lum(bg.slice(0,7))>0.5?'#111':'#fff'; }
+// FIX: con la nueva paleta corporativa (tonos más apagados/oscuros que la vívida anterior),
+// el umbral de luminancia se sube un poco (de .5 a .55) para que los colores intermedios
+// —donde antes se elegía texto negro y quedaba poco legible— usen blanco. Además se agrega
+// un contorno de texto (stroke) del color opuesto, así el número siempre resalta sobre el
+// color de fondo del segmento/barra, sin importar qué tan clara u oscura sea la paleta activa.
+function autoLabel(bg){ return lum(bg.slice(0,7))>0.55?'#161616':'#ffffff'; }
+function autoLabelStroke(bg){ return lum(bg.slice(0,7))>0.55?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; }
 
 // ── FILE READER ──────────────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', function(e){
@@ -1447,7 +1394,8 @@ function buildMes(data){
         align: 'top',
         anchor: 'end',
         color: '#00a2ff',
-        font: { size: 10, weight: '700' },
+        textStrokeColor:isDarkMode?'rgba(13,15,20,.85)':'rgba(255,255,255,.85)',textStrokeWidth:3,
+        font: { size: 11, weight: '700' },
         formatter: v => v > 0 ? v.toLocaleString('es') : ''
       }
     });
@@ -1464,7 +1412,8 @@ function buildMes(data){
       datalabels:{
         display:ctx=>ctx.dataset.type === 'bar' && ctx.dataset.data[ctx.dataIndex]>0,
         color:ctx=>autoLabel(ctx.dataset.backgroundColor),
-        font:{size:9,weight:'700'},anchor:'center',align:'center',
+        textStrokeColor:ctx=>autoLabelStroke(ctx.dataset.backgroundColor),textStrokeWidth:1.5,
+        font:{size:10,weight:'700'},anchor:'center',align:'center',
         formatter:v=>v>0?v.toLocaleString('es'):'',
       }
     },
@@ -1486,7 +1435,7 @@ function buildCiudad(data){
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{...tip()},
         datalabels:{
-          color:legendColor(),font:{size:10,weight:'700'},
+          color:legendColor(),font:{size:11,weight:'700'},
           anchor:'end',align:'right',clamp:true,
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
@@ -1510,8 +1459,9 @@ function buildEstado(data){
         legend:{position:'bottom',labels:{color:legendColor(),boxWidth:13,padding:14,font:{size:11}}},
         tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.toLocaleString('es')} (${Math.round(ctx.parsed/total*100)}%)`}},
         datalabels:{
-          color:'#fff',font:{size:12,weight:'700'},
-          textStrokeColor: 'rgba(0,0,0,.5)',textStrokeWidth:2,
+          color:ctx=>autoLabel(ctx.dataset.backgroundColor[ctx.dataIndex]),
+          textStrokeColor:ctx=>autoLabelStroke(ctx.dataset.backgroundColor[ctx.dataIndex]),textStrokeWidth:2,
+          font:{size:14,weight:'700'},
           formatter:(v,ctx)=>{const p=Math.round(v/total*100);return p>=4?`${v.toLocaleString('es')}\n(${p}%)`:'';},
           textAlign:'center',
         }
@@ -1532,7 +1482,7 @@ function buildTipoMod(data){
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{...tip()},
         datalabels:{
-          color:legendColor(),font:{size:10,weight:'700'},
+          color:legendColor(),font:{size:11,weight:'700'},
           anchor:'end',align:'right',clamp:true,
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
@@ -1560,7 +1510,7 @@ function buildMedio(data){
       plugins:{legend:{display:false},
         tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.x.toLocaleString('es')} (${total?Math.round(ctx.parsed.x/total*100):0}%)`}},
         datalabels:{
-          color:legendColor(),font:{size:10,weight:'700'},anchor:'end',align:'right',clamp:true,
+          color:legendColor(),font:{size:11,weight:'700'},anchor:'end',align:'right',clamp:true,
           formatter:v=>`${v.toLocaleString('es')} (${total?Math.round(v/total*100):0}%)`,padding:{right:4},
         }
       },
@@ -1582,7 +1532,7 @@ function buildSolicitante(data){
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{...tip()},
         datalabels:{
-          color:legendColor(),font:{size:11,weight:'700'},
+          color:legendColor(),font:{size:12,weight:'700'},
           anchor:'end',align:'top',clamp:true,formatter:v=>v.toLocaleString('es'),
         }
       },
@@ -1609,7 +1559,8 @@ function buildEstadoMes(data){
         datalabels:{
           display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,
           color:ctx=>eCols[ctx.datasetIndex],
-          font:{size:9,weight:'700'},anchor:'top',align:'top',clamp:true,
+          textStrokeColor:isDarkMode?'rgba(13,15,20,.85)':'rgba(255,255,255,.85)',textStrokeWidth:3,
+          font:{size:10,weight:'700'},anchor:'top',align:'top',clamp:true,
           formatter:v=>v>0?v.toLocaleString('es'):'',
         }
       },
