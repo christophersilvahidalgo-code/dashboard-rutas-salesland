@@ -220,6 +220,7 @@
     border-radius:6px;width:26px;height:26px;font-size:.78rem;cursor:pointer;display:flex;
     align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
   .box-btn:hover{border-color:var(--accent2);color:var(--text)}
+  .box-btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
 
   /* ── EMPTY ── */
   .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -315,6 +316,13 @@
 
   <label>📊 Gráficos en pantalla:</label>
   <div class="chip-row" id="chartview-row"></div>
+
+  <div class="ctrl-sep"></div>
+
+  <label>🔀 Orden de gráficos:</label>
+  <div class="chip-row">
+    <button class="chip" title="Vuelve al orden original de gráficos" onclick="resetChartOrder()">↺ Restablecer orden</button>
+  </div>
 
   <div class="ctrl-sep"></div>
 
@@ -1209,6 +1217,53 @@ const CHART_DEFS = [
   {key:'medio',    boxId:'box-medio',    canvasId:'ch-medio',    title:'Medio de Solicitud',     sub:'Canales de ingreso, ordenados por volumen',        h:280, build:data=>buildMedio(data)},
   {key:'sol',      boxId:'box-sol',      canvasId:'ch-sol',      title:'Solicitante',            sub:'Por rol',                                          h:280, build:data=>buildSolicitante(data)},
 ];
+const CHART_DEFS_BY_KEY = Object.fromEntries(CHART_DEFS.map(c=>[c.key,c]));
+
+// ── ORDEN PERSONALIZADO DE GRÁFICOS ──────────────────────────────────────────
+// El usuario puede mover cada cuadro de gráfico con los botones ◀ ▶ de su cabecera
+// para armar el orden que prefiera. El orden se guarda por clave (no por posición
+// fija) para que, aunque se agreguen u oculten gráficos, cada uno recuerde su lugar.
+let chartOrder = (function(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('chart-order')||'null');
+    if(Array.isArray(saved) && saved.length){
+      // Conserva el orden guardado, pero agrega al final cualquier gráfico nuevo
+      // que no estuviera contemplado cuando se guardó (por si el dashboard cambia).
+      const known = saved.filter(k=>CHART_DEFS_BY_KEY[k]);
+      const missing = CHART_DEFS.map(c=>c.key).filter(k=>!known.includes(k));
+      return [...known, ...missing];
+    }
+  }catch(e){}
+  return CHART_DEFS.map(c=>c.key); // por defecto, el orden original
+})();
+
+function saveChartOrder(){ localStorage.setItem('chart-order', JSON.stringify(chartOrder)); }
+
+// Mueve un gráfico un lugar hacia atrás (dir=-1) o hacia adelante (dir=+1),
+// respetando solo el orden entre los gráficos actualmente visibles (los ocultos
+// mantienen su posición relativa dentro del arreglo, para no "perder su lugar"
+// si luego se vuelven a mostrar).
+function moveChart(key, dir){
+  const visibleOrder = chartOrder.filter(k=>visibleCharts.has(k));
+  const idx = visibleOrder.indexOf(key);
+  const newIdx = idx + dir;
+  if(idx===-1 || newIdx<0 || newIdx>=visibleOrder.length) return; // ya está en el extremo
+  [visibleOrder[idx], visibleOrder[newIdx]] = [visibleOrder[newIdx], visibleOrder[idx]];
+
+  // Reinserta el nuevo orden visible en las mismas posiciones del arreglo completo
+  const slots = chartOrder.map((k,i)=>({k,i})).filter(o=>visibleCharts.has(o.k)).map(o=>o.i);
+  slots.forEach((slotIdx, seq)=>{ chartOrder[slotIdx] = visibleOrder[seq]; });
+
+  saveChartOrder();
+  renderDashboard();
+}
+
+function resetChartOrder(){
+  chartOrder = CHART_DEFS.map(c=>c.key);
+  saveChartOrder();
+  if(allData.length) renderDashboard();
+  showToast('↺ Orden restablecido','Los gráficos volvieron a su orden original.','#00d4ff');
+}
 
 // ── TARJETAS KPI (resumen superior): cuáles se muestran ──────────────────────
 // El grid de tarjetas usa auto-fit (ver .cards en el CSS), así que al ocultar
@@ -1323,11 +1378,13 @@ function cardHTML(id,cls,label,value,sub,badge){
   </div>`;
 }
 
-function chartBoxHTML(boxId,canvasId,title,sub,h){
+function chartBoxHTML(boxId,canvasId,title,sub,h,key,isFirst,isLast){
   return `<div class="chart-box" id="${boxId}">
     <div class="chart-box-head">
       <div><div class="chart-title">${title}</div></div>
       <div class="box-controls">
+        <button class="box-btn" title="Mover hacia atrás" onclick="moveChart('${key}',-1)" ${isFirst?'disabled':''}>◀</button>
+        <button class="box-btn" title="Mover hacia adelante" onclick="moveChart('${key}',1)" ${isLast?'disabled':''}>▶</button>
         <button class="box-btn" title="Cambiar tamaño" onclick="cycleBoxSize('${boxId}')">⤢</button>
         <button class="box-btn" title="Capturar imagen de este gráfico" onclick="captureBox('${boxId}','${title}')">📸</button>
       </div>
@@ -1344,10 +1401,10 @@ function renderDashboard(){
   const pen=data.filter(d=>d.estado==='PENDIENTE').length;
   const pI=n?Math.round(imp/n*100):0;
 
-  const visibleDefs = CHART_DEFS.filter(c=>visibleCharts.has(c.key));
+  const visibleDefs = chartOrder.filter(k=>visibleCharts.has(k)).map(k=>CHART_DEFS_BY_KEY[k]);
   const chartsHtml = visibleDefs.length
-    ? `<div class="chart-grid">${visibleDefs.map(c=>{
-        let html = chartBoxHTML(c.boxId,c.canvasId,c.title,c.sub,c.h);
+    ? `<div class="chart-grid">${visibleDefs.map((c,idx)=>{
+        let html = chartBoxHTML(c.boxId,c.canvasId,c.title,c.sub,c.h,c.key,idx===0,idx===visibleDefs.length-1);
         if(c.full) html = html.replace('class="chart-box"','class="chart-box full"');
         return html;
       }).join('')}</div>`
