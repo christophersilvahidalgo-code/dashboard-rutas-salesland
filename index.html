@@ -874,59 +874,61 @@ function processData(rows,fileName){
     ];
     for(let i=headerIdx+1;i<rows.length;i++){
       const r=rows[i];
-      const mes=String(r[mi]||'').trim().toUpperCase();
-      if(!mes||mes==='MES') continue;
+      const mesTexto=String(r[mi]||'').trim().toUpperCase(); // columna MES tal cual viene en el archivo
+      const rawFecha=String(r[fi2]||'').trim();
+      if(!mesTexto && !rawFecha) continue; // fila totalmente vacía
+      if(mesTexto==='MES') continue; // encabezado repetido
 
-      // ── CONVERSIÓN ADAPTATIVA A DÍA NATURAL (01 - 31) ──
-      const rawFecha = String(r[fi2]||'').trim();
-      let diaStr = '';
-      
-      if(rawFecha) {
-        // Caso 1: Si es un número de serie de Excel (Ej: 45658 o similar)
-        if (/^\d{5}(\.\d+)?$/.test(rawFecha)) {
-          const excelDate = Float64Array.from([parseFloat(rawFecha)])[0];
+      // ── EXTRACCIÓN DE DÍA Y MES DIRECTAMENTE DESDE LA FECHA (dd/mm/aaaa) ──
+      //
+      // FIX: el filtro de "Mes" agrupaba las filas usando la columna de texto MES tal
+      // cual viene en el archivo, y el filtro de "Día" intentaba adivinar si la fecha
+      // venía en formato DD/MM o MM/DD comparándola contra ese mismo texto. Eso fallaba
+      // en dos casos reales encontrados en el archivo consolidado:
+      //   1) Hay filas donde el texto de MES no coincide con la fecha registrada
+      //      (ej. fila con MES="JUNIO" pero FECHA="03/07/2026", que es julio). Como el
+      //      "Día" se derivaba comparando contra ese MES incorrecto, el día quedaba mal
+      //      calculado o la fila terminaba agrupada en el mes equivocado.
+      //   2) Al depender de esa comparación, cualquier mes cuyo número coincidiera con
+      //      alguno de los dos componentes de la fecha (ej. julio = "07") podía perder
+      //      días completos del filtro.
+      // Ahora, como el formato de fecha del sistema está confirmado como "dd/mm/aaaa",
+      // se extrae el día (dd) y el mes (mm, convertido a su nombre) SIEMPRE directamente
+      // de la fecha registrada. Así "Mes" y "Día" siempre quedan consistentes entre sí
+      // (ambos vienen del mismo dato), y una columna MES mal escrita ya no afecta el filtro.
+      // Si la fecha no se puede interpretar, se usa el texto de la columna MES como respaldo.
+      let diaStr='';
+      let mes=mesTexto;
+
+      if(rawFecha){
+        // Caso 1: número de serie de Excel (ej. 45658), típico al pegar celdas con formato fecha
+        if(/^\d{5}(\.\d+)?$/.test(rawFecha)){
+          const excelDate=Float64Array.from([parseFloat(rawFecha)])[0];
           // Ajuste de desfase histórico de bisiestos de Excel (1900)
-          const dateObj = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-          if (!isNaN(dateObj.getTime())) {
+          const dateObj=new Date(Math.round((excelDate-25569)*86400*1000));
+          if(!isNaN(dateObj.getTime())){
             // Añadir +1 día para mitigar desfases de zona horaria local durante la conversión UTC
-            dateObj.setUTCDate(dateObj.getUTCDate() + 1);
-            diaStr = String(dateObj.getUTCDate()).padStart(2, '0');
-          }
-        } 
-        // Caso 2: Formatos estándar de texto (DD/MM/AAAA, MM/DD/AAAA, AAAA-MM-DD...)
-        //
-        // FIX: antes se asumía siempre DD/MM/AAAA y se tomaba el primer número como
-        // día. Pero si el Google Sheet exporta las fechas en formato MM/DD/AAAA
-        // (configuración regional en inglés), el primer número es el MES, no el día.
-        // Como en julio el mes siempre es "07", todas las filas terminaban con
-        // diaStr='07' sin importar el día real: por eso solo aparecía el día 07.
-        // Ahora se usa el mes que ya conocemos (columna MES, ej. "JULIO") para
-        // saber cuál de los dos números es realmente el día.
-        else {
-          const mesNum = MES_ORDER.indexOf(mes) + 1; // 1-12, o 0 si no se reconoce el mes
-          if (/^\d{4}[-/]/.test(rawFecha)) {
-            // Empieza con año (AAAA-MM-DD): día y mes están al final, en ese orden
-            const matchEnd = rawFecha.match(/[-/](\d{1,2})[-/](\d{1,2})$/);
-            if (matchEnd) {
-              const a = parseInt(matchEnd[1], 10), b = parseInt(matchEnd[2], 10);
-              // AAAA-MM-DD -> a=mes, b=día
-              diaStr = String(mesNum && a === mesNum ? b : (b === mesNum ? a : b)).padStart(2, '0');
-            }
-          } else {
-            // DD/MM/AAAA o MM/DD/AAAA: dos primeros componentes ambiguos
-            const matchStart = rawFecha.match(/^(\d{1,2})[-/](\d{1,2})/);
-            if (matchStart) {
-              const a = parseInt(matchStart[1], 10), b = parseInt(matchStart[2], 10);
-              if (mesNum && a === mesNum && b !== mesNum) diaStr = String(b).padStart(2, '0');       // MM/DD -> día=b
-              else if (mesNum && b === mesNum && a !== mesNum) diaStr = String(a).padStart(2, '0');  // DD/MM -> día=a
-              else diaStr = String(a).padStart(2, '0'); // ambiguo (ej. mes desconocido): se mantiene el criterio anterior (DD/MM)
-            } else {
-              const single = rawFecha.match(/^(\d{1,2})/);
-              if (single) diaStr = String(parseInt(single[1], 10)).padStart(2, '0');
-            }
+            dateObj.setUTCDate(dateObj.getUTCDate()+1);
+            diaStr=String(dateObj.getUTCDate()).padStart(2,'0');
+            const mesNum=dateObj.getUTCMonth()+1;
+            if(mesNum>=1&&mesNum<=12) mes=MES_ORDER[mesNum-1];
           }
         }
+        // Caso 2: texto "dd/mm/aaaa" o "dd-mm-aaaa" (formato confirmado del sistema)
+        else if(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.test(rawFecha)){
+          const [,ddS,mmS]=rawFecha.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+          const dd=parseInt(ddS,10), mm=parseInt(mmS,10);
+          if(mm>=1&&mm<=12){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
+        }
+        // Caso 3: texto "aaaa-mm-dd" (formato ISO, por si la fuente cambia de origen)
+        else if(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.test(rawFecha)){
+          const [,,mmS,ddS]=rawFecha.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+          const dd=parseInt(ddS,10), mm=parseInt(mmS,10);
+          if(mm>=1&&mm<=12){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
+        }
       }
+
+      if(!mes) continue; // sin mes ni fecha interpretable, se descarta la fila
 
       data.push({
         mes,fecha:rawFecha,dia:diaStr,ciudad:String(r[ci]||'').trim().toUpperCase(),
