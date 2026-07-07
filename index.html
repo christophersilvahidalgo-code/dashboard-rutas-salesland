@@ -255,14 +255,17 @@
   <span class="tool-label">🔗 Google Sheet:</span>
   <input type="text" id="gsheet-url" placeholder="Pega el link CSV publicado del Google Sheet…">
   <button class="sync-btn" id="gsheet-connect" onclick="connectGSheet()">Conectar</button>
+  <button class="sync-btn" id="gsheet-pause" onclick="toggleGSheetAutoRefresh()" style="background:var(--select-bg);border:1px solid var(--border);display:none">⏸️ Pausar auto-actualización</button>
   <span id="sync-status"></span>
   <div class="status-pill">
     <div class="status-dot" id="status-dot"></div>
     <span id="status-text">Sin datos</span>
   </div>
+  <div class="toolbar-sep"></div>
+  <button class="sync-btn" id="ctrlbar-toggle" style="background:var(--select-bg);border:1px solid var(--border)" onclick="toggleCtrlBar()">🧰 Ocultar herramientas</button>
 </div>
 
-<div class="ctrl-bar">
+<div class="ctrl-bar" id="ctrl-bar">
   <label>🎨 Tipo de paleta:</label>
   <div class="chip-row" id="paltype-row">
     <button class="chip active" data-ptype="categorica" onclick="setPalType('categorica',this)">🔷 Categórica</button>
@@ -628,6 +631,24 @@ const BG_THEMES = {
   },
 };
 
+// ── OCULTAR/MOSTRAR BARRA DE HERRAMIENTAS (paleta, fondo, etiquetas, etc.) ───
+function toggleCtrlBar(){
+  const bar = document.getElementById('ctrl-bar');
+  const btn = document.getElementById('ctrlbar-toggle');
+  const hidden = bar.style.display === 'none';
+  bar.style.display = hidden ? 'flex' : 'none';
+  btn.textContent = hidden ? '🧰 Ocultar herramientas' : '🧰 Mostrar herramientas';
+  localStorage.setItem('ctrlbar-hidden', hidden ? '0' : '1');
+}
+window.addEventListener('DOMContentLoaded', ()=>{
+  if(localStorage.getItem('ctrlbar-hidden') === '1'){
+    const bar = document.getElementById('ctrl-bar');
+    const btn = document.getElementById('ctrlbar-toggle');
+    if(bar) bar.style.display = 'none';
+    if(btn) btn.textContent = '🧰 Mostrar herramientas';
+  }
+});
+
 let currentBg   = 'dark';
 let isDarkMode  = true;
 let allData     = [];
@@ -680,8 +701,16 @@ function setBg(name, btn) {
 
 // Retorna la paleta de colores activa (según tipo Categórica/Secuencial/Divergente elegido)
 function PAL()  { return generatePalette(12); }
-// Estado siempre usa colores semánticos fijos, independientes de la paleta elegida
-function ECOL(k){ return ESTADO_FIXED[k] || '#94a3b8'; }
+// FIX: antes ECOL() devolvía siempre ESTADO_FIXED (colores fijos), por lo que el gráfico
+// "Estado de Solicitudes" nunca cambiaba visualmente aunque se eligiera otra paleta.
+// Ahora toma los colores de la paleta activa, respetando el orden semántico
+// Impactado/Observado/Pendiente, para que sí se actualice al cambiar de paleta.
+const ESTADO_ORDER = ['IMPACTADO','OBSERVADO','PENDIENTE'];
+function ECOL(k){
+  const idx = ESTADO_ORDER.indexOf(k);
+  if(idx === -1) return '#94a3b8';
+  return PAL()[idx % PAL().length];
+}
 function tickColor()  { return isDarkMode ? '#6b7a99' : '#555e7a'; }
 function gridColor()  { return isDarkMode ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)'; }
 function legendColor(){ return isDarkMode ? '#b0b8d0' : '#334155'; }
@@ -832,14 +861,37 @@ async function fetchGSheetData(silent){
 }
 
 
+// Pausa/reanuda el auto-refresco cada 5 min, sin perder la conexión activa
+let gsheetPaused = false;
+function updateGSheetPauseBtn(){
+  const btn = document.getElementById('gsheet-pause');
+  if(!btn) return;
+  btn.style.display = gsheetActiveUrl ? 'inline-block' : 'none';
+  btn.textContent = gsheetPaused ? '▶️ Reanudar auto-actualización' : '⏸️ Pausar auto-actualización';
+}
+function toggleGSheetAutoRefresh(){
+  gsheetPaused = !gsheetPaused;
+  if(gsheetPaused){
+    if(gsheetInterval){ clearInterval(gsheetInterval); gsheetInterval = null; }
+    showToast('⏸️ Pausado','La auto-actualización cada 5 min está detenida.','#ffab00');
+  } else {
+    if(gsheetInterval) clearInterval(gsheetInterval);
+    gsheetInterval = setInterval(()=>fetchGSheetData(true), GSHEET_REFRESH_MS);
+    showToast('▶️ Reanudado','La auto-actualización cada 5 min sigue activa.','#00e676');
+  }
+  updateGSheetPauseBtn();
+}
+
 function connectGSheet(){
   const raw = document.getElementById('gsheet-url').value;
   if(!raw.trim()){ showToast('Falta el link','Pega el link del Google Sheet publicado.','#ffab00'); return; }
   gsheetActiveUrl = toCsvExportUrl(raw);
   localStorage.setItem('gsheet-url', raw);
+  gsheetPaused = false;
   if(gsheetInterval) clearInterval(gsheetInterval);
   fetchGSheetData(false);
   gsheetInterval = setInterval(()=>fetchGSheetData(true), GSHEET_REFRESH_MS);
+  updateGSheetPauseBtn();
 }
 
 // Restaurar el último link usado al recargar la página
@@ -888,16 +940,37 @@ function processData(rows,fileName){
             diaStr = String(dateObj.getUTCDate()).padStart(2, '0');
           }
         } 
-        // Caso 2: Formatos estándar de texto (DD/MM/AAAA, AAAA-MM-DD, DD-MM...)
+        // Caso 2: Formatos estándar de texto (DD/MM/AAAA, MM/DD/AAAA, AAAA-MM-DD...)
+        //
+        // FIX: antes se asumía siempre DD/MM/AAAA y se tomaba el primer número como
+        // día. Pero si el Google Sheet exporta las fechas en formato MM/DD/AAAA
+        // (configuración regional en inglés), el primer número es el MES, no el día.
+        // Como en julio el mes siempre es "07", todas las filas terminaban con
+        // diaStr='07' sin importar el día real: por eso solo aparecía el día 07.
+        // Ahora se usa el mes que ya conocemos (columna MES, ej. "JULIO") para
+        // saber cuál de los dos números es realmente el día.
         else {
-          // Si empieza con año (AAAA-MM-DD), extraemos el componente del final
+          const mesNum = MES_ORDER.indexOf(mes) + 1; // 1-12, o 0 si no se reconoce el mes
           if (/^\d{4}[-/]/.test(rawFecha)) {
-            const matchEnd = rawFecha.match(/[-/](\d{1,2})$/);
-            if (matchEnd) diaStr = String(parseInt(matchEnd[1], 10)).padStart(2, '0');
+            // Empieza con año (AAAA-MM-DD): día y mes están al final, en ese orden
+            const matchEnd = rawFecha.match(/[-/](\d{1,2})[-/](\d{1,2})$/);
+            if (matchEnd) {
+              const a = parseInt(matchEnd[1], 10), b = parseInt(matchEnd[2], 10);
+              // AAAA-MM-DD -> a=mes, b=día
+              diaStr = String(mesNum && a === mesNum ? b : (b === mesNum ? a : b)).padStart(2, '0');
+            }
           } else {
-            // Si empieza con el día (DD/MM/AAAA), extraemos el componente inicial
-            const matchStart = rawFecha.match(/^(\d{1,2})/);
-            if (matchStart) diaStr = String(parseInt(matchStart[1], 10)).padStart(2, '0');
+            // DD/MM/AAAA o MM/DD/AAAA: dos primeros componentes ambiguos
+            const matchStart = rawFecha.match(/^(\d{1,2})[-/](\d{1,2})/);
+            if (matchStart) {
+              const a = parseInt(matchStart[1], 10), b = parseInt(matchStart[2], 10);
+              if (mesNum && a === mesNum && b !== mesNum) diaStr = String(b).padStart(2, '0');       // MM/DD -> día=b
+              else if (mesNum && b === mesNum && a !== mesNum) diaStr = String(a).padStart(2, '0');  // DD/MM -> día=a
+              else diaStr = String(a).padStart(2, '0'); // ambiguo (ej. mes desconocido): se mantiene el criterio anterior (DD/MM)
+            } else {
+              const single = rawFecha.match(/^(\d{1,2})/);
+              if (single) diaStr = String(parseInt(single[1], 10)).padStart(2, '0');
+            }
           }
         }
       }
@@ -1248,7 +1321,7 @@ function cardHTML(id,cls,label,value,sub,badge){
 function chartBoxHTML(boxId,canvasId,title,sub,h){
   return `<div class="chart-box" id="${boxId}">
     <div class="chart-box-head">
-      <div><div class="chart-title">${title}</div><div class="chart-sub">${sub}</div></div>
+      <div><div class="chart-title">${title}</div></div>
       <div class="box-controls">
         <button class="box-btn" title="Cambiar tamaño" onclick="cycleBoxSize('${boxId}')">⤢</button>
         <button class="box-btn" title="Capturar imagen de este gráfico" onclick="captureBox('${boxId}','${title}')">📸</button>
