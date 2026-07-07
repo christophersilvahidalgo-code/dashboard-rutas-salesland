@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   /* ── THEME TOKENS (overridden by JS) ─────────────────────────────────── */
   :root {
@@ -192,14 +193,24 @@
   .card-badge{position:absolute;top:16px;right:16px;font-size:1.4rem;opacity:.12}
 
   /* ── CHART GRID ── */
-  .chart-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  /* auto-fit: cuando el usuario oculta gráficos con los chips de "Gráficos en pantalla",
+     los que quedan visibles se reparten y agrandan solos para llenar el espacio. */
+  .chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:18px}
   .chart-grid .full{grid-column:1/-1}
   .chart-box{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);
-    padding:20px 22px;display:flex;flex-direction:column;gap:12px;transition:background .35s,border-color .35s}
+    padding:20px 22px;display:flex;flex-direction:column;gap:12px;transition:background .35s,border-color .35s,box-shadow .2s}
   .chart-title{font-size:.83rem;font-weight:700;color:var(--text)}
   .chart-sub{font-size:.7rem;color:var(--text2);margin-top:2px}
-  .chart-wrap{position:relative}
+  .chart-wrap{position:relative;transition:height .25s ease}
   .chart-wrap canvas{width:100% !important}
+
+  /* ── PER-CHART CONTROLS (reporte / tamaño / captura) ── */
+  .chart-box-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .box-controls{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .box-btn{background:var(--select-bg);border:1px solid var(--border);color:var(--text2);
+    border-radius:6px;width:26px;height:26px;font-size:.78rem;cursor:pointer;display:flex;
+    align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+  .box-btn:hover{border-color:var(--accent2);color:var(--text)}
 
   /* ── EMPTY ── */
   .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -220,7 +231,7 @@
     .chart-grid .full{grid-column:1}
     header,.toolbar,.ctrl-bar,.filters{padding:12px 14px}
   }
-  @media(max-width:500px){.cards{grid-template-columns:1fr 1fr}.card-value{font-size:1.45rem}}
+  @media(max-width:500px){.cards{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.card-value{font-size:1.45rem}}
 </style>
 </head>
 <body>
@@ -252,27 +263,17 @@
 </div>
 
 <div class="ctrl-bar">
-  <label>🎨 Paleta:</label>
-  <div class="chip-row" id="palette-row">
-    <button class="chip active" data-pal="neon" onclick="setPalette('neon',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#ff4d6d"></div><div class="chip-dot" style="background:#00d4ff"></div><div class="chip-dot" style="background:#bf5af2"></div><div class="chip-dot" style="background:#00e676"></div></div>Neón
-    </button>
-    <button class="chip" data-pal="fire" onclick="setPalette('fire',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#ff2d00"></div><div class="chip-dot" style="background:#ff6b00"></div><div class="chip-dot" style="background:#ffd600"></div><div class="chip-dot" style="background:#ff4081"></div></div>Fuego
-    </button>
-    <button class="chip" data-pal="electric" onclick="setPalette('electric',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#2979ff"></div><div class="chip-dot" style="background:#00e5ff"></div><div class="chip-dot" style="background:#76ff03"></div><div class="chip-dot" style="background:#ea80fc"></div></div>Eléctrico
-    </button>
-    <button class="chip" data-pal="tropical" onclick="setPalette('tropical',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#ff6e40"></div><div class="chip-dot" style="background:#40c4ff"></div><div class="chip-dot" style="background:#69f0ae"></div><div class="chip-dot" style="background:#ffd740"></div></div>Tropical
-    </button>
-    <button class="chip" data-pal="candy" onclick="setPalette('candy',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#ff4db8"></div><div class="chip-dot" style="background:#c653ff"></div><div class="chip-dot" style="background:#ff7043"></div><div class="chip-dot" style="background:#00bcd4"></div></div>Candy
-    </button>
-    <button class="chip" data-pal="aurora" onclick="setPalette('aurora',this)">
-      <div class="chip-dots"><div class="chip-dot" style="background:#00ffa3"></div><div class="chip-dot" style="background:#00cfff"></div><div class="chip-dot" style="background:#a855f7"></div><div class="chip-dot" style="background:#ff6b9d"></div></div>Aurora
-    </button>
+  <label>🎨 Tipo de paleta:</label>
+  <div class="chip-row" id="paltype-row">
+    <button class="chip active" data-ptype="categorica" onclick="setPalType('categorica',this)">🔷 Categórica</button>
+    <button class="chip" data-ptype="secuencial" onclick="setPalType('secuencial',this)">📶 Secuencial</button>
+    <button class="chip" data-ptype="divergente" onclick="setPalType('divergente',this)">⇔ Divergente</button>
   </div>
+
+  <div class="ctrl-sep"></div>
+
+  <label>🎚️ Escala:</label>
+  <div class="chip-row" id="palvariant-row"></div>
 
   <div class="ctrl-sep"></div>
 
@@ -306,6 +307,21 @@
       <div class="bg-swatch" style="background:linear-gradient(135deg,#1a0533,#2d1b69)"></div>Degradado
     </button>
   </div>
+
+  <div class="ctrl-sep"></div>
+
+  <label>📊 Gráficos en pantalla:</label>
+  <div class="chip-row" id="chartview-row"></div>
+
+  <div class="ctrl-sep"></div>
+
+  <label>🏷️ Etiquetas a mostrar:</label>
+  <div class="chip-row" id="cardview-row"></div>
+
+  <div class="ctrl-sep"></div>
+
+  <label>🔢 Valores en gráficos:</label>
+  <div class="chip-row" id="labelview-row"></div>
 </div>
 
 <div class="filters" id="filters-bar" style="display:none">
@@ -363,23 +379,195 @@
 Chart.register(ChartDataLabels);
 
 // ── PALETTES ────────────────────────────────────────────────────────────────
-const PALETTES = {
-  neon:     ['#ff4d6d','#00d4ff','#bf5af2','#00e676','#ffab00','#ff6b35','#ff2d78','#1de9b6','#e040fb','#76ff03','#ff6f00','#40c4ff'],
-  fire:     ['#ff2d00','#ff6b00','#ffd600','#ff4081','#ff8f00','#f50057','#ffab40','#ff3d00','#ff6d00','#ff9100','#ffca28','#ff80ab'],
-  electric: ['#2979ff','#00e5ff','#76ff03','#ea80fc','#ff6d00','#1de9b6','#00b0ff','#64dd17','#d500f9','#ff9100','#00e676','#e040fb'],
-  tropical: ['#ff6e40','#40c4ff','#69f0ae','#ffd740','#ff4081','#18ffff','#b2ff59','#ff6d00','#00b0ff','#00e676','#ffab40','#f50057'],
-  candy:    ['#ff4db8','#c653ff','#ff7043','#00bcd4','#ffeb3b','#4caf50','#e91e63','#9c27b0','#03a9f4','#ff5722','#cddc39','#00acc1'],
-  aurora:   ['#00ffa3','#00cfff','#a855f7','#ff6b9d','#22d3ee','#4ade80','#f472b6','#818cf8','#34d399','#e879f9','#38bdf8','#fb923c'],
+// Sistema de paletas basado en tipos reales de escalas de datos:
+//  · Categórica → colores distintos, sin orden, para identificar categorías (ciudad, medio, solicitante...)
+//  · Secuencial → un solo color en degradado, de más intenso a más claro, para resaltar magnitud/ranking
+//  · Divergente → degradado entre dos colores que se alejan de un punto neutro, para resaltar polaridad
+const PALETTE_CATALOG = {
+  categorica: {
+    label:'Categórica',
+    // Cada variante trae 20 colores (antes 12) para que, incluso en los gráficos
+    // con más categorías (ej. Top Ciudades con 12 barras), nunca se repita un
+    // color por quedarse corta la lista. `enforceMinToneDiff` además revisa que
+    // dos colores vecinos no queden con luminosidad parecida, así que la
+    // diversidad se nota aunque haya muchas categorías a la vez.
+    variants:{
+      set2:    {label:'Set2',     colors:['#4C9F70','#E67E22','#5B84B1','#C0392B','#8E44AD','#F1C40F','#16A085','#D35400','#2C3E50','#7F8C8D','#27AE60','#2980B9','#C2185B','#00838F','#8D6E63','#7CB342','#5E35B1','#F4511E','#546E7A','#AFB42B']},
+      tableau: {label:'Tableau',  colors:['#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F','#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC','#86BCB6','#D37295','#499894','#B6992D','#8CD17D','#F1CE63','#D4A6C8','#FABFD2','#79706E','#6B4C9A']},
+      bold:    {label:'Bold',     colors:['#7F3C8D','#11A579','#3969AC','#F2B701','#E73F74','#80BA5A','#E68310','#008695','#CF1C90','#f97b72','#4b4b8f','#a5aa99','#e58606','#5d69b1','#52bca3','#99c945','#cc61b0','#24796c','#daa51b','#2f8ac4']},
+      vivid:   {label:'Vívida',   colors:['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4','#f032e6','#bfef45','#fabed4','#469990','#dcbeff','#9A6324','#800000','#aaffc3','#808000','#ffd8b1','#000075','#a9a9a9','#ffe119','#000000']},
+    }
+  },
+  secuencial: {
+    label:'Secuencial',
+    variants:{
+      azul:  {label:'Azules', base:'#0d6efd'},
+      verde: {label:'Verdes', base:'#0f9d58'},
+      ambar: {label:'Ámbar',  base:'#e67e22'},
+    }
+  },
+  divergente: {
+    label:'Divergente',
+    variants:{
+      rojoverde:   {label:'Rojo–Verde',     low:'#d7263d', high:'#2e8b57'},
+      moradoverde: {label:'Púrpura–Verde',  low:'#8e44ad', high:'#27ae60'},
+      naranjaazul: {label:'Naranja–Azul',   low:'#e67e22', high:'#2980b9'},
+    }
+  }
 };
 
-const ESTADO_PAL = {
-  neon:     {IMPACTADO:'#00e676', OBSERVADO:'#ffab00', PENDIENTE:'#ff4d6d'},
-  fire:     {IMPACTADO:'#ffd600', OBSERVADO:'#ff6b00', PENDIENTE:'#ff2d00'},
-  electric: {IMPACTADO:'#76ff03', OBSERVADO:'#00e5ff', PENDIENTE:'#ea80fc'},
-  tropical: {IMPACTADO:'#69f0ae', OBSERVADO:'#ffd740', PENDIENTE:'#ff6e40'},
-  candy:    {IMPACTADO:'#69f0ae', OBSERVADO:'#ffeb3b', PENDIENTE:'#ff4db8'},
-  aurora:   {IMPACTADO:'#00ffa3', OBSERVADO:'#00cfff', PENDIENTE:'#ff6b9d'},
-};
+// Colores semánticos FIJOS para Estado (no cambian con la paleta): siempre
+// verde=Impactado(bueno), ámbar=Observado(atención), rojo=Pendiente(riesgo).
+// Así lo más importante del dashboard siempre se lee igual, sin importar la paleta elegida.
+//
+// FIX: los hex originales (#2e8b57, #e6a70b, #d7263d) tenían distinto matiz pero
+// casi la MISMA luminosidad entre ámbar y rojo (~47% y ~50%), por lo que en pantalla
+// se percibían "del mismo tono". Se recalcula la luminosidad manteniendo el matiz de
+// cada color, para asegurar al menos 40% de separación de tono entre colores vecinos.
+const ESTADO_FIXED = (function(){
+  const order=['IMPACTADO','OBSERVADO','PENDIENTE'];
+  const raw={IMPACTADO:'#2e8b57', OBSERVADO:'#e6a70b', PENDIENTE:'#d7263d'};
+  const adjusted=enforceMinToneDiff(order.map(k=>raw[k]), 40);
+  const map={}; order.forEach((k,i)=>map[k]=adjusted[i]); return map;
+})();
+
+let currentPalType = 'categorica';
+let currentPalVariant = 'set2';
+
+// ── Interpolación de color (hex) ─────────────────────────────────────────────
+function hexToRgb(hex){
+  hex=hex.replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  const n=parseInt(hex,16);
+  return [(n>>16)&255,(n>>8)&255,n&255];
+}
+function rgbToHex(r,g,b){
+  return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+function lerpColor(c1,c2,t){
+  const a=hexToRgb(c1), b=hexToRgb(c2);
+  return rgbToHex(a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t);
+}
+
+// ── CONTROL DE TONO (LUMINOSIDAD) ENTRE COLORES ──────────────────────────────
+// Antes, dos colores vecinos en una paleta podían tener matiz (hue) distinto
+// pero la MISMA luminosidad (ej. ámbar #e6a70b y rojo #d7263d, ambos ~48-50%
+// de luminosidad), por lo que a simple vista se veían "del mismo tono".
+// Estas funciones convierten a HSL, y si dos colores consecutivos quedan a
+// menos de `minDiff` puntos de luminosidad, empujan al segundo color hacia el
+// extremo claro u oscuro más cercano hasta garantizar esa separación mínima.
+function hexToHsl(hex){
+  const [r0,g0,b0]=hexToRgb(hex);
+  const r=r0/255,g=g0/255,b=b0/255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h=0,s=0; const l=(max+min)/2;
+  if(max!==min){
+    const d=max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d + (g<b?6:0); break;
+      case g: h=(b-r)/d + 2; break;
+      default: h=(r-g)/d + 4; break;
+    }
+    h*=60;
+  }
+  return [h, s*100, l*100];
+}
+function hslToHex(h,s,l){
+  h=((h%360)+360)%360; s=Math.max(0,Math.min(100,s))/100; l=Math.max(0,Math.min(100,l))/100;
+  const c=(1-Math.abs(2*l-1))*s;
+  const x=c*(1-Math.abs((h/60)%2-1));
+  const m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0;} else if(h<120){r=x;g=c;b=0;} else if(h<180){r=0;g=c;b=x;}
+  else if(h<240){r=0;g=x;b=c;} else if(h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
+  return rgbToHex((r+m)*255,(g+m)*255,(b+m)*255);
+}
+function enforceMinToneDiff(colors, minDiff=40){
+  const hsl = colors.map(hexToHsl);
+  for(let i=1;i<hsl.length;i++){
+    const prevL = hsl[i-1][2];
+    const curL  = hsl[i][2];
+    if(Math.abs(curL-prevL) < minDiff){
+      hsl[i][2] = prevL>=50 ? Math.max(10, prevL-minDiff) : Math.min(90, prevL+minDiff);
+    }
+  }
+  return hsl.map(([h,s,l])=>hslToHex(h, Math.max(s,42), l));
+}
+
+// Secuencial: primer valor = color base (más intenso), últimos = más claros.
+// Ideal para rankings (top ciudades, top tipos) donde el orden SÍ importa.
+function sequentialScale(base,n){
+  const arr=[];
+  for(let i=0;i<n;i++){
+    const t = n<=1?0:(i/(n-1))*0.78;
+    arr.push(lerpColor(base,'#eef2f8',t));
+  }
+  return arr;
+}
+
+// Divergente: primera mitad interpola hacia un color bajo, segunda mitad hacia un color alto,
+// pasando por un punto neutro. Útil para resaltar polaridad (ej. por debajo/encima del promedio).
+function divergingScale(low,high,n){
+  const mid='#f2f2f2';
+  const arr=[];
+  for(let i=0;i<n;i++){
+    const t = n<=1?0.5:i/(n-1);
+    arr.push(t<=0.5 ? lerpColor(low,mid,t/0.5) : lerpColor(mid,high,(t-0.5)/0.5));
+  }
+  return arr;
+}
+
+function generatePalette(n){
+  const type=PALETTE_CATALOG[currentPalType];
+  const variant=type.variants[currentPalVariant] || Object.values(type.variants)[0];
+  if(currentPalType==='secuencial') return sequentialScale(variant.base,n);
+  if(currentPalType==='divergente') return divergingScale(variant.low,variant.high,n);
+  // Nota: en secuencial/divergente la cercanía de tono entre pasos ES la señal (magnitud/orden),
+  // así que ahí no se fuerza contraste. En categórica sí, porque cada color debe leerse
+  // como una categoría distinta.
+  const arr=[]; for(let i=0;i<n;i++) arr.push(variant.colors[i%variant.colors.length]);
+  return enforceMinToneDiff(arr, 40);
+}
+
+function renderVariantChips(){
+  const row=document.getElementById('palvariant-row');
+  if(!row) return;
+  row.innerHTML='';
+  const type=PALETTE_CATALOG[currentPalType];
+  Object.entries(type.variants).forEach(([key,v])=>{
+    const btn=document.createElement('button');
+    btn.className='chip'+(key===currentPalVariant?' active':'');
+    btn.onclick=()=>setPalVariant(key,btn);
+    let swatch;
+    if(currentPalType==='categorica'){
+      swatch=`<div class="chip-dots">${v.colors.slice(0,4).map(c=>`<div class="chip-dot" style="background:${c}"></div>`).join('')}</div>`;
+    }else if(currentPalType==='secuencial'){
+      swatch=`<div class="bg-swatch" style="background:linear-gradient(90deg,${v.base},${v.base}22)"></div>`;
+    }else{
+      swatch=`<div class="bg-swatch" style="background:linear-gradient(90deg,${v.low},#f2f2f2,${v.high})"></div>`;
+    }
+    btn.innerHTML=swatch+v.label;
+    row.appendChild(btn);
+  });
+}
+
+function setPalType(type,btn){
+  currentPalType=type;
+  document.querySelectorAll('#paltype-row .chip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentPalVariant=Object.keys(PALETTE_CATALOG[type].variants)[0];
+  renderVariantChips();
+  if(allData.length) renderDashboard();
+}
+
+function setPalVariant(key,btn){
+  currentPalVariant=key;
+  document.querySelectorAll('#palvariant-row .chip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(allData.length) renderDashboard();
+}
+renderVariantChips();
 
 // ── BACKGROUNDS ─────────────────────────────────────────────────────────────
 const BG_THEMES = {
@@ -440,15 +628,11 @@ const BG_THEMES = {
   },
 };
 
-let currentPal  = 'neon';
 let currentBg   = 'dark';
 let isDarkMode  = true;
 let allData     = [];
 let charts      = {};
 const MES_ORDER = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-
-// Control de visibilidad de la línea de tendencia
-let showTrendLine = false;
 
 // SELECCIONES MULTIPLES (ESTADO)
 let selectedFilters = {
@@ -487,14 +671,6 @@ function applyBg(name) {
   if (allData.length) renderDashboard(tickCol, gridCol, legendCol);
 }
 
-// ── APPLY PALETTE ────────────────────────────────────────────────────────────
-function setPalette(name, btn) {
-  currentPal = name;
-  document.querySelectorAll('#palette-row .chip').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  if (allData.length) renderDashboard();
-}
-
 function setBg(name, btn) {
   currentBg = name;
   document.querySelectorAll('#bg-row .chip').forEach(b=>b.classList.remove('active'));
@@ -502,9 +678,10 @@ function setBg(name, btn) {
   applyBg(name);
 }
 
-// Retorna la paleta de colores activa
-function PAL()  { return PALETTES[currentPal] || PALETTES.neon; }
-function ECOL(k){ return (ESTADO_PAL[currentPal]||ESTADO_PAL.neon)[k]||'#94a3b8'; }
+// Retorna la paleta de colores activa (según tipo Categórica/Secuencial/Divergente elegido)
+function PAL()  { return generatePalette(12); }
+// Estado siempre usa colores semánticos fijos, independientes de la paleta elegida
+function ECOL(k){ return ESTADO_FIXED[k] || '#94a3b8'; }
 function tickColor()  { return isDarkMode ? '#6b7a99' : '#555e7a'; }
 function gridColor()  { return isDarkMode ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)'; }
 function legendColor(){ return isDarkMode ? '#b0b8d0' : '#334155'; }
@@ -546,39 +723,114 @@ const GSHEET_REFRESH_MS = 5*60*1000; // auto-actualizar cada 5 minutos
 let gsheetInterval = null;
 let gsheetActiveUrl = '';
 
-// Acepta un link normal de Google Sheets (edit/view) o uno ya publicado como CSV,
-// y devuelve siempre la URL de exportación CSV correspondiente.
+// Acepta un link normal de Google Sheets (edit/view) o uno ya publicado/consultable como CSV,
+// y devuelve siempre una URL con la que el navegador SÍ pueda leer los datos.
+//
+// FIX: la URL clásica "/export?format=csv" no funcionaba porque Google no responde con
+// cabecera Access-Control-Allow-Origin en ese endpoint, así que el navegador bloqueaba
+// la petición por CORS (por eso nunca conectaba, sin importar el link pegado).
+// El endpoint "gviz/tq?tqx=out:csv" es la vía pública de Google Visualization API y
+// sí incluye esa cabecera, por lo que puede leerse desde cualquier origen sin backend propio.
 function toCsvExportUrl(url){
   url = url.trim();
-  // Ya es un link de exportación CSV (publicado o /export?format=csv)
-  if(/output=csv|format=csv/.test(url)) return url;
+  // Ya es una URL de consulta/exportación CSV
+  if(/tqx=out:csv|output=csv|format=csv/.test(url)) return url;
   // Link típico: https://docs.google.com/spreadsheets/d/<ID>/edit#gid=<GID>
-  const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  const m = url.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9-_]+)/);
   if(m){
     const id = m[1];
     const gidMatch = url.match(/[?#&]gid=([0-9]+)/);
     const gid = gidMatch ? gidMatch[1] : '0';
-    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+    return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
   }
   return url; // se asume que ya es una URL CSV válida
 }
 
+// URL de respaldo (export csv clásico) por si el Sheet tiene alguna restricción particular
+// que impida usar gviz/tq. Se intenta solo si la principal falla.
+function toFallbackExportUrl(url){
+  const m = url.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9-_]+)/);
+  if(!m) return null;
+  const id = m[1];
+  const gidMatch = url.match(/[?#&]gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
+  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+}
+
+// FIX #2: el link "publicado" (…/pub?...&output=csv) responde con un REDIRECT hacia
+// un dominio doc-XX-XX-sheets.googleusercontent.com que, a diferencia de docs.google.com,
+// casi nunca envía cabecera Access-Control-Allow-Origin. Por eso el fetch directo fallaba
+// siempre con ese tipo de link específico (el que usa el usuario), aunque otros formatos
+// de URL de Google Sheets sí funcionaran. Para resolverlo, si el fetch directo falla por
+// CORS/red, se reintenta el mismo contenido a través de un proxy CORS público que sí
+// agrega esa cabecera.
+//
+// FIX #3: "corsproxy.io" en su plan gratuito SOLO acepta peticiones que llegan desde un
+// puñado de orígenes concretos (localhost, CodePen, GitHub Pages, StackBlitz, etc.). Si el
+// dashboard se abre desde cualquier otro dominio (o como archivo local en algunos
+// navegadores), corsproxy.io rechaza la petición y el error se ve idéntico a un CORS normal
+// ("Failed to fetch"), aunque el Sheet esté perfectamente publicado. Por eso ahora se prueban
+// varios proxies sin esa restricción de origen, y se deja corsproxy.io solo como último recurso.
+const CORS_PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+];
+
+async function tryFetchCsv(url){
+  const res = await fetch(url + (url.includes('?')?'&':'?') + '_ts=' + Date.now());
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const text = await res.text();
+  // Si Google devuelve una página HTML (login, error, "necesita permiso"...) en vez de
+  // CSV, se trata como fallo para poder pasar al siguiente candidato de la lista.
+  if(!text.trim() || /^\s*<(!doctype|html)/i.test(text)) throw new Error('la respuesta no es un CSV válido (¿HTML de error?)');
+  return text;
+}
+
 async function fetchGSheetData(silent){
   if(!gsheetActiveUrl) return;
+  if(!silent) showToast('Sincronizando…','Descargando datos del Google Sheet','#00d4ff');
+
+  // Candidatos a probar en orden: URL activa → URL de respaldo clásica → ambas
+  // otra vez pero a través de varios proxies CORS distintos.
+  const candidates = [{label:'directo', url:gsheetActiveUrl}];
+  const fb = toFallbackExportUrl(gsheetActiveUrl);
+  if(fb && fb !== gsheetActiveUrl) candidates.push({label:'respaldo export=csv', url:fb});
+  const withProxies = [...candidates];
+  candidates.forEach(c => CORS_PROXIES.forEach((makeProxyUrl,i) =>
+    withProxies.push({label:'proxy #'+(i+1), url:makeProxyUrl(c.url)})
+  ));
+
+  let csvText = null;
+  const attempts = []; // guarda el detalle de cada intento fallido, para diagnóstico
+  for(const c of withProxies){
+    try{ csvText = await tryFetchCsv(c.url); break; }
+    catch(err){ attempts.push(c.label+': '+err.message); }
+  }
+
+  if(csvText === null){
+    const detail = attempts.join(' | ');
+    document.getElementById('sync-status').textContent = '⚠️ Error de sync (todos los intentos fallaron)';
+    if(!silent) showToast(
+      'Error de sincronización',
+      'No se pudo leer el Sheet desde ningún método (directo ni proxies). Esto suele ser un bloqueo de red/extensión del navegador hacia dominios externos, no un problema del Sheet. Prueba en una ventana de incógnito sin extensiones, o en otra red. Detalle: '+detail,
+      '#ff4d6d'
+    );
+    return;
+  }
+
   try{
-    if(!silent) showToast('Sincronizando…','Descargando datos del Google Sheet','#00d4ff');
-    const res = await fetch(gsheetActiveUrl + (gsheetActiveUrl.includes('?')?'&':'?') + '_ts=' + Date.now());
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const csvText = await res.text();
     const wb = XLSX.read(csvText,{type:'string'});
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
     processData(rows,'Google Sheet (sincronizado)');
     document.getElementById('sync-status').textContent = '✅ Última sync: '+new Date().toLocaleTimeString('es-PE');
   }catch(err){
     document.getElementById('sync-status').textContent = '⚠️ Error de sync: '+err.message;
-    if(!silent) showToast('Error de sincronización','No se pudo leer el Google Sheet: '+err.message,'#ff4d6d');
+    if(!silent) showToast('Error de sincronización','No se pudo interpretar el CSV recibido. Detalle: '+err.message,'#ff4d6d');
   }
 }
+
 
 function connectGSheet(){
   const raw = document.getElementById('gsheet-url').value;
@@ -830,10 +1082,22 @@ function resetFilters(){
 function countBy(data,key){const m={};data.forEach(d=>{const v=d[key];m[v]=(m[v]||0)+1;});return m;}
 function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
-function mkChart(id,cfg){
+function mkChart(id,cfg,labelKey){
   destroyChart(id);
   const ctx=document.getElementById(id)?.getContext('2d');
   if(!ctx)return;
+  // Si el usuario apagó las etiquetas de este gráfico en "🏷️ Etiquetas a mostrar",
+  // se fuerza display:false tanto a nivel de plugin como de cada dataset (el
+  // datalabels de dataset tiene prioridad sobre el del plugin, por eso hay que
+  // pisar ambos para que realmente desaparezcan).
+  if(labelKey && !labelsVisible.has(labelKey)){
+    if(cfg.options && cfg.options.plugins && cfg.options.plugins.datalabels){
+      cfg.options.plugins.datalabels = {display:false};
+    }
+    (cfg.data && cfg.data.datasets || []).forEach(ds=>{
+      if(ds.datalabels) ds.datalabels = {display:false};
+    });
+  }
   charts[id]=new Chart(ctx,cfg);
 }
 
@@ -850,6 +1114,150 @@ function tip(){
   };
 }
 
+// ── VISTA DE INFORME: qué gráficos se muestran en pantalla ───────────────────
+// Reemplaza la vieja selección "para PDF": ahora el usuario elige, con chips,
+// qué cuadros de gráfico quiere ver en el momento. El grid usa auto-fit, así
+// que los gráficos visibles siempre se reparten y adaptan el tamaño entre sí
+// (si hay 1 solo, ocupa todo el ancho; si hay varios, se acomodan en columnas).
+const boxSizeState = {};                 // id -> 's' | 'm' | 'l'  (tamaño elegido por el usuario)
+const BOX_SIZES = { s:{h:200,full:false}, m:{h:300,full:false}, l:{h:420,full:true} };
+
+const CHART_DEFS = [
+  {key:'mes',      boxId:'box-mes',      canvasId:'ch-mes',      title:'Modificaciones por Mes', sub:'Volumen por tipo de solicitud + tendencia total', h:255, full:true,  build:data=>buildMes(data)},
+  {key:'estado',   boxId:'box-estado',   canvasId:'ch-estado',   title:'Estado de Solicitudes',  sub:'Impactado / Observado / Pendiente',                h:300, build:data=>buildEstado(data)},
+  {key:'estadomes',boxId:'box-estadomes',canvasId:'ch-estadomes',title:'Estado por Mes',         sub:'Evolución mensual de estados',                     h:300, build:data=>buildEstadoMes(data)},
+  {key:'ciudad',   boxId:'box-ciudad',   canvasId:'ch-ciudad',   title:'Top Ciudades',           sub:'Por volumen de solicitudes',                       h:320, build:data=>buildCiudad(data)},
+  {key:'tipomod',  boxId:'box-tipomod',  canvasId:'ch-tipomod',  title:'Tipo de Modificación',   sub:'Top 10 categorías',                                h:320, build:data=>buildTipoMod(data)},
+  {key:'medio',    boxId:'box-medio',    canvasId:'ch-medio',    title:'Medio de Solicitud',     sub:'Canales de ingreso, ordenados por volumen',        h:280, build:data=>buildMedio(data)},
+  {key:'sol',      boxId:'box-sol',      canvasId:'ch-sol',      title:'Solicitante',            sub:'Por rol',                                          h:280, build:data=>buildSolicitante(data)},
+];
+
+// ── TARJETAS KPI (resumen superior): cuáles se muestran ──────────────────────
+// El grid de tarjetas usa auto-fit (ver .cards en el CSS), así que al ocultar
+// una o más, las que queden visibles se reparten y agrandan solas para llenar
+// el espacio, sin distorsionarse, en cualquier tamaño de pantalla.
+const CARD_DEFS = [
+  {key:'total',       title:'Total Modificaciones'},
+  {key:'impactadas',  title:'Impactadas ✅'},
+  {key:'observadas',  title:'Observadas ⚠️'},
+  {key:'pendientes',  title:'Pendientes 🕐'},
+];
+
+let visibleCards = (function(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('visible-cards')||'null');
+    if(Array.isArray(saved) && saved.length) return new Set(saved);
+  }catch(e){}
+  return new Set(CARD_DEFS.map(c=>c.key)); // por defecto, todas visibles
+})();
+
+function renderCardViewChips(){
+  const row=document.getElementById('cardview-row');
+  if(!row) return;
+  row.innerHTML='';
+  CARD_DEFS.forEach(c=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='chip'+(visibleCards.has(c.key)?' active':'');
+    btn.textContent=c.title;
+    btn.title='Mostrar/ocultar esta tarjeta';
+    btn.onclick=()=>toggleCardVisible(c.key,btn);
+    row.appendChild(btn);
+  });
+}
+function toggleCardVisible(key,btn){
+  if(visibleCards.has(key)) visibleCards.delete(key); else visibleCards.add(key);
+  btn.classList.toggle('active');
+  localStorage.setItem('visible-cards', JSON.stringify([...visibleCards]));
+  if(allData.length) renderDashboard();
+}
+renderCardViewChips();
+
+let visibleCharts = (function(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('visible-charts')||'null');
+    if(Array.isArray(saved) && saved.length) return new Set(saved);
+  }catch(e){}
+  return new Set(CHART_DEFS.map(c=>c.key)); // por defecto, todos visibles
+})();
+
+function renderChartViewChips(){
+  const row=document.getElementById('chartview-row');
+  if(!row) return;
+  row.innerHTML='';
+  CHART_DEFS.forEach(c=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='chip'+(visibleCharts.has(c.key)?' active':'');
+    btn.textContent=c.title;
+    btn.title='Mostrar/ocultar este gráfico';
+    btn.onclick=()=>toggleChartVisible(c.key,btn);
+    row.appendChild(btn);
+  });
+}
+function toggleChartVisible(key,btn){
+  if(visibleCharts.has(key)) visibleCharts.delete(key); else visibleCharts.add(key);
+  btn.classList.toggle('active');
+  localStorage.setItem('visible-charts', JSON.stringify([...visibleCharts]));
+  if(allData.length) renderDashboard();
+}
+renderChartViewChips();
+
+// ── ETIQUETAS EN GRÁFICOS: qué gráficos muestran sus valores (datalabels) ────
+// Independiente de "Gráficos en pantalla": aquí se decide, por gráfico, si se
+// ven los numeritos/porcentajes dibujados encima de barras, líneas o el dona.
+// Útil para "limpiar" un gráfico muy cargado sin tener que ocultarlo entero.
+let labelsVisible = (function(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('visible-labels')||'null');
+    if(Array.isArray(saved) && saved.length) return new Set(saved);
+  }catch(e){}
+  return new Set(CHART_DEFS.map(c=>c.key)); // por defecto, todas las etiquetas visibles
+})();
+
+function renderLabelViewChips(){
+  const row=document.getElementById('labelview-row');
+  if(!row) return;
+  row.innerHTML='';
+  CHART_DEFS.forEach(c=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='chip'+(labelsVisible.has(c.key)?' active':'');
+    btn.textContent=c.title;
+    btn.title='Mostrar/ocultar los valores dibujados en este gráfico';
+    btn.onclick=()=>toggleLabelVisible(c.key,btn);
+    row.appendChild(btn);
+  });
+}
+function toggleLabelVisible(key,btn){
+  if(labelsVisible.has(key)) labelsVisible.delete(key); else labelsVisible.add(key);
+  btn.classList.toggle('active');
+  localStorage.setItem('visible-labels', JSON.stringify([...labelsVisible]));
+  if(allData.length) renderDashboard();
+}
+renderLabelViewChips();
+
+// ── TEMPLATES ────────────────────────────────────────────────────────────────
+function cardHTML(id,cls,label,value,sub,badge){
+  return `<div class="card ${cls}" id="${id}">
+    <div class="card-label">${label}</div><div class="card-value">${value}</div>
+    <div class="card-sub">${sub}</div><div class="card-badge">${badge}</div>
+  </div>`;
+}
+
+function chartBoxHTML(boxId,canvasId,title,sub,h){
+  return `<div class="chart-box" id="${boxId}">
+    <div class="chart-box-head">
+      <div><div class="chart-title">${title}</div><div class="chart-sub">${sub}</div></div>
+      <div class="box-controls">
+        <button class="box-btn" title="Cambiar tamaño" onclick="cycleBoxSize('${boxId}')">⤢</button>
+        <button class="box-btn" title="Capturar imagen de este gráfico" onclick="captureBox('${boxId}','${title}')">📸</button>
+      </div>
+    </div>
+    <div class="chart-wrap" style="height:${h}px"><canvas id="${canvasId}"></canvas></div>
+  </div>`;
+}
+
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function renderDashboard(){
   const data=filterData(), n=data.length;
@@ -858,54 +1266,69 @@ function renderDashboard(){
   const pen=data.filter(d=>d.estado==='PENDIENTE').length;
   const pI=n?Math.round(imp/n*100):0;
 
+  const visibleDefs = CHART_DEFS.filter(c=>visibleCharts.has(c.key));
+  const chartsHtml = visibleDefs.length
+    ? `<div class="chart-grid">${visibleDefs.map(c=>{
+        let html = chartBoxHTML(c.boxId,c.canvasId,c.title,c.sub,c.h);
+        if(c.full) html = html.replace('class="chart-box"','class="chart-box full"');
+        return html;
+      }).join('')}</div>`
+    : `<div class="empty-state" style="height:160px">
+        <div class="empty-icon">👁️</div>
+        <div>No hay gráficos seleccionados para mostrar</div>
+        <div style="font-size:.73rem;opacity:.6">Actívalos en "📊 Gráficos en pantalla" arriba</div>
+      </div>`;
+
+  const cardHtmlMap = {
+    total:      cardHTML('card-total','c1','Total Modificaciones',n.toLocaleString('es'),'registros en el período','📋'),
+    impactadas: cardHTML('card-impactadas','c2','Impactadas ✅',imp.toLocaleString('es'),pI+'% del total','✅'),
+    observadas: cardHTML('card-observadas','c3','Observadas ⚠️',obs.toLocaleString('es'),(n?Math.round(obs/n*100):0)+'% del total','⚠️'),
+    pendientes: cardHTML('card-pendientes','c4','Pendientes 🕐',pen.toLocaleString('es'),(n?Math.round(pen/n*100):0)+'% del total','🕐'),
+  };
+  const cardsHtml = CARD_DEFS.filter(c=>visibleCards.has(c.key)).map(c=>cardHtmlMap[c.key]).join('');
+
   document.getElementById('main-content').innerHTML=`
-    <div class="cards">
-      <div class="card c1"><div class="card-label">Total Modificaciones</div><div class="card-value">${n.toLocaleString('es')}</div><div class="card-sub">registros en el período</div><div class="card-badge">📋</div></div>
-      <div class="card c2"><div class="card-label">Impactadas ✅</div><div class="card-value">${imp.toLocaleString('es')}</div><div class="card-sub">${pI}% del total</div><div class="card-badge">✅</div></div>
-      <div class="card c3"><div class="card-label">Observadas ⚠️</div><div class="card-value">${obs.toLocaleString('es')}</div><div class="card-sub">${n?Math.round(obs/n*100):0}% del total</div><div class="card-badge">⚠️</div></div>
-      <div class="card c4"><div class="card-label">Pendientes 🕐</div><div class="card-value">${pen.toLocaleString('es')}</div><div class="card-sub">${n?Math.round(pen/n*100):0}% del total</div><div class="card-badge">🕐</div></div>
-    </div>
-    <div class="chart-grid">
-      <div class="chart-box full">
-        <div><div class="chart-title">Modificaciones por Mes</div><div class="chart-sub"></div></div>
-        <div class="chart-wrap" style="height:255px"><canvas id="ch-mes"></canvas></div>
-      </div>
-    </div>
-    <div class="chart-grid">
-      <div class="chart-box">
-        <div><div class="chart-title">Top Ciudades</div><div class="chart-sub">Por volumen de solicitudes</div></div>
-        <div class="chart-wrap" style="height:300px"><canvas id="ch-ciudad"></canvas></div>
-      </div>
-      <div class="chart-box">
-        <div><div class="chart-title">Estado de Solicitudes</div><div class="chart-sub">Impactado / Observado / Pendiente</div></div>
-        <div class="chart-wrap" style="height:300px"><canvas id="ch-estado"></canvas></div>
-      </div>
-    </div>
-    <div class="chart-grid">
-      <div class="chart-box">
-        <div><div class="chart-title">Tipo de Modificación</div><div class="chart-sub">Top 10 categorías</div></div>
-        <div class="chart-wrap" style="height:320px"><canvas id="ch-tipomod"></canvas></div>
-      </div>
-      <div class="chart-box">
-        <div><div class="chart-title">Medio de Solicitud</div><div class="chart-sub">Canales de ingreso</div></div>
-        <div class="chart-wrap" style="height:320px"><canvas id="ch-medio"></canvas></div>
-      </div>
-    </div>
-    <div class="chart-grid">
-      <div class="chart-box">
-        <div><div class="chart-title">Solicitante</div><div class="chart-sub">Por rol</div></div>
-        <div class="chart-wrap" style="height:240px"><canvas id="ch-sol"></canvas></div>
-      </div>
-      <div class="chart-box">
-        <div><div class="chart-title">Estado por Mes</div><div class="chart-sub">Evolución mensual de estados</div></div>
-        <div class="chart-wrap" style="height:240px"><canvas id="ch-estadomes"></canvas></div>
-      </div>
-    </div>`;
+    ${cardsHtml ? `<div class="cards">${cardsHtml}</div>` : ''}
+    ${chartsHtml}`;
 
   setTimeout(()=>{
-    buildMes(data);buildCiudad(data);buildEstado(data);
-    buildTipoMod(data);buildMedio(data);buildSolicitante(data);buildEstadoMes(data);
+    visibleDefs.forEach(c=>c.build(data));
+    Object.keys(boxSizeState).forEach(applyBoxSize);
   },0);
+}
+
+// ── TAMAÑO ADAPTATIVO POR CUADRO ─────────────────────────────────────────────
+function cycleBoxSize(boxId){
+  const order=['s','m','l'];
+  const cur=boxSizeState[boxId]||'m';
+  boxSizeState[boxId]=order[(order.indexOf(cur)+1)%order.length];
+  applyBoxSize(boxId);
+}
+function applyBoxSize(boxId){
+  const box=document.getElementById(boxId); if(!box) return;
+  const size=BOX_SIZES[boxSizeState[boxId]||'m'];
+  box.classList.toggle('full', !!size.full);
+  const wrap=box.querySelector('.chart-wrap');
+  if(wrap) wrap.style.height=size.h+'px';
+  const canvas=box.querySelector('canvas');
+  if(canvas && charts[canvas.id]) setTimeout(()=>charts[canvas.id].resize(),0);
+}
+
+// ── CAPTURA DE PANTALLA (por cuadro) ─────────────────────────────────────────
+async function captureBox(boxId,title){
+  const el=document.getElementById(boxId); if(!el) return;
+  showToast('Capturando…',title,'#00d4ff');
+  try{
+    const canvas=await html2canvas(el,{backgroundColor:null,scale:2});
+    const link=document.createElement('a');
+    const fecha=new Date().toISOString().slice(0,10);
+    link.download=`${title.replace(/\s+/g,'-').toLowerCase()}-${fecha}.png`;
+    link.href=canvas.toDataURL('image/png');
+    link.click();
+    showToast('✅ Capturado','Imagen descargada: '+link.download,'#00e676');
+  }catch(err){
+    showToast('Error','No se pudo capturar: '+err.message,'#ff4d6d');
+  }
 }
 
 // ── CHARTS ───────────────────────────────────────────────────────────────────
@@ -929,7 +1352,7 @@ function buildMes(data){
     order: 1
   }));
 
-  if (showTrendLine && meses.length > 0) {
+  if (meses.length > 0) {
     const totalesMensuales = meses.map(m => data.filter(d => d.mes === m).length);
 
     ds.push({
@@ -976,59 +1399,7 @@ function buildMes(data){
       x:{...scaleOpts(),stacked:true},
       y:{...scaleOpts(),stacked:true,grace:'20%'}
     },
-  }});
-
-  injectTrendButton();
-}
-
-function injectTrendButton() {
-  const chartBox = document.getElementById('ch-mes')?.closest('.chart-box');
-  if (!chartBox) return;
-
-  let headerDiv = chartBox.querySelector('.chart-header-custom');
-  if (!headerDiv) {
-    const titleDiv = chartBox.querySelector('div');
-    
-    headerDiv = document.createElement('div');
-    headerDiv.className = 'chart-header-custom';
-    headerDiv.style.display = 'flex';
-    headerDiv.style.justify = 'space-between';
-    headerDiv.style.alignItems = 'center';
-    headerDiv.style.width = '100%';
-    
-    titleDiv.parentNode.insertBefore(headerDiv, titleDiv);
-    headerDiv.appendChild(titleDiv);
-  }
-
-  let oldBtn = chartBox.querySelector('.btn-trend-toggle');
-  if (oldBtn) oldBtn.remove();
-
-  const btn = document.createElement('button');
-  btn.className = 'btn-trend-toggle';
-  btn.innerHTML = showTrendLine ? '📈 Quitar Tendencia' : '📉 Ver Tendencia';
-  
-  btn.style.background = showTrendLine ? 'rgba(0,212,255,.1)' : 'var(--select-bg)';
-  btn.style.border = showTrendLine ? '1px solid var(--accent2)' : '1px solid var(--border)';
-  btn.style.color = showTrendLine ? 'var(--accent2)' : 'var(--text2)';
-  btn.style.borderRadius = '6px';
-  btn.style.padding = '5px 12px';
-  btn.style.fontSize = '.72rem';
-  btn.style.fontWeight = '600';
-  btn.style.cursor = 'pointer';
-  btn.style.transition = 'all .2s';
-
-  btn.onmouseover = () => { btn.style.borderColor = 'var(--accent2)'; btn.style.color = 'var(--text)'; };
-  btn.onmouseout = () => { 
-    btn.style.borderColor = showTrendLine ? 'var(--accent2)' : 'var(--border)'; 
-    btn.style.color = showTrendLine ? 'var(--accent2)' : 'var(--text2)'; 
-  };
-
-  btn.onclick = function() {
-    showTrendLine = !showTrendLine;
-    if (allData.length) buildMes(filterData());
-  };
-
-  headerDiv.appendChild(btn);
+  }},'mes');
 }
 
 function buildCiudad(data){
@@ -1050,7 +1421,7 @@ function buildCiudad(data){
       scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:11}},grid:{display:false}}},
       layout:{padding:{right:55}},
     }
-  });
+  },'ciudad');
 }
 
 function buildEstado(data){
@@ -1073,7 +1444,7 @@ function buildEstado(data){
         }
       }
     }
-  });
+  },'estado');
 }
 
 function buildTipoMod(data){
@@ -1096,31 +1467,34 @@ function buildTipoMod(data){
       scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:10}},grid:{display:false}}},
       layout:{padding:{right:60}},
     }
-  });
+  },'tipomod');
 }
 
 function buildMedio(data){
+  // Barras horizontales en vez de pie: para comparar cantidades entre canales,
+  // una barra se lee con más precisión que sectores circulares.
   const pal=PAL();
   const filt=data.filter(d=>d.medio&&d.medio!=='MEDIO DE SOLICITUD');
   const map=countBy(filt,'medio');
-  const keys=Object.keys(map);
-  const vals=keys.map(k=>map[k]);
-  const total=vals.reduce((a,b)=>a+b,0);
-  mkChart('ch-medio',{type:'pie',
-    data:{labels:keys,datasets:[{data:vals,backgroundColor:pal.map(c=>c+'cc'),borderColor:pal,borderWidth:2,hoverOffset:8}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{
-        legend:{position:'bottom',labels:{color:legendColor(),boxWidth:13,padding:13,font:{size:11}}},
-        tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.toLocaleString('es')} (${Math.round(ctx.parsed/total*100)}%)`}},
+  const total=Object.values(map).reduce((a,b)=>a+b,0);
+  const top=topN(map,10);
+  mkChart('ch-medio',{type:'bar',
+    data:{labels:top.map(([k])=>k),datasets:[{
+      label:'Solicitudes',data:top.map(([,v])=>v),
+      backgroundColor:pal.slice(0,top.length).map(c=>c+'cc'),borderColor:pal.slice(0,top.length),borderWidth:1,borderRadius:4,
+    }]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed.x.toLocaleString('es')} (${total?Math.round(ctx.parsed.x/total*100):0}%)`}},
         datalabels:{
-          color:'#fff',font:{size:11,weight:'700'},
-          textStrokeColor: 'rgba(0,0,0,.5)',textStrokeWidth:2,
-          formatter:(v,ctx)=>{const p=Math.round(v/total*100);return p>=5?`${v.toLocaleString('es')}\n(${p}%)`:'';},
-          textAlign:'center',
+          color:legendColor(),font:{size:10,weight:'700'},anchor:'end',align:'right',clamp:true,
+          formatter:v=>`${v.toLocaleString('es')} (${total?Math.round(v/total*100):0}%)`,padding:{right:4},
         }
-      }
+      },
+      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:11}},grid:{display:false}}},
+      layout:{padding:{right:85}},
     }
-  });
+  },'medio');
 }
 
 function buildSolicitante(data){
@@ -1142,7 +1516,7 @@ function buildSolicitante(data){
       scales:{x:{ticks:{color:tickColor(),font:{size:10}},grid:{display:false}},y:{...scaleOpts()}},
       layout:{padding:{top:22}},
     }
-  });
+  },'sol');
 }
 
 function buildEstadoMes(data){
@@ -1169,7 +1543,7 @@ function buildEstadoMes(data){
       scales:{x:{...scaleOpts()},y:{...scaleOpts()}},
       layout:{padding:{top:18}},
     }
-  });
+  },'estadomes');
 }
 
 // ── TOAST ────────────────────────────────────────────────────────────────────
