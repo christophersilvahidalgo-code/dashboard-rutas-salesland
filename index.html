@@ -676,6 +676,59 @@ function lum(hex){
 function autoLabel(bg){ return lum(bg.slice(0,7))>0.55?'#161616':'#ffffff'; }
 function autoLabelStroke(bg){ return lum(bg.slice(0,7))>0.55?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; }
 
+// ── PARSER CSV PROPIO (sin pasar por XLSX para archivos .csv) ───────────────
+//
+// FIX RAÍZ DEL PROBLEMA DE DÍAS/MESES INCORRECTOS Y TOTALES QUE NO CUADRAN:
+//
+// Antes, los archivos .csv se leían con XLSX.read(texto,{type:'string'}), que internamente
+// convierte el texto CSV a una "hoja" de cálculo. Al hacerlo, XLSX intenta ADIVINAR qué
+// celdas son fechas y, si una celda como "06/07/2026" o "04/07/2026" parece una fecha
+// ambigua (día ≤ 12), la interpreta usando el formato MM/DD/AAAA (mes/día, como en EE.UU.)
+// en lugar de DD/MM/AAAA (día/mes, el formato real de este archivo). Además, la convierte
+// internamente a un número de serie de Excel, perdiendo el texto original "06/07/2026".
+//
+// Esto provocaba exactamente los síntomas reportados:
+//   • "06/07/2026" (6 de julio) se leía como si fuera "07/06" → 7 de junio, y luego el
+//     ajuste de +1 día (pensado para desfases de zona horaria) lo corrompía aún más.
+//   • Registros de días ≤12 de julio terminaban clasificados en OTRO mes (p.ej. abril, junio),
+//     inflando esos meses y vaciando julio de días que sí tiene.
+//   • Ese mismo corrimiento de +1 día, al caer en el último día de un mes, podía generar
+//     meses que no existen en los datos reales (p.ej. un 31/07 desplazado a 01/08 crea un
+//     registro fantasma en AGOSTO), explicando por qué aparecían meses de AGOSTO a DICIEMBRE
+//     sin tener registros reales.
+//   • Como el filtro "Día" y los totales dependen de este mismo dato corrompido, ningún
+//     total coincidía con lo que realmente hay en el archivo para una fecha exacta.
+//
+// La solución es no dejar que XLSX "adivine" fechas en archivos CSV: se parsea el texto
+// CSV manualmente, respetando comillas y comas internas, y manteniendo cada celda como
+// texto literal (p.ej. "06/07/2026" se queda exactamente así). De esa forma, la extracción
+// de día/mes en processData() —que ya interpreta correctamente el formato DD/MM/AAAA—
+// trabaja siempre sobre el texto real del archivo, sin que ninguna librería lo reinterprete.
+function parseCSVText(text){
+  // Quita BOM si existe (común en CSV exportados desde Excel/Sheets)
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[];
+  let row=[], field='', inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } // comilla escapada ""
+        else inQuotes=false;
+      }else field+=c;
+    }else{
+      if(c==='"') inQuotes=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\r'){ /* ignorar, \n maneja el salto de línea */ }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else field+=c;
+    }
+  }
+  // Última fila/celda si el archivo no termina con salto de línea
+  if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
+  return rows;
+}
+
 // ── FILE READER ──────────────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', function(e){
   const file=e.target.files[0]; if(!file) return;
@@ -687,11 +740,14 @@ document.getElementById('file-input').addEventListener('change', function(e){
     try{
       let rows=[];
       if(ext==='csv'){
-        const wb=XLSX.read(ev.target.result,{type:'string'});
-        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        // Parser propio: conserva el texto de fecha tal cual viene, sin adivinar formato.
+        rows=parseCSVText(ev.target.result);
       }else{
-        const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
-        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        // Archivos Excel reales (.xlsx/.xls): cellDates:true hace que las celdas de fecha
+        // lleguen como objetos Date ya resueltos por Excel (sin ambigüedad DD/MM vs MM/DD,
+        // porque Excel guarda un valor de fecha real, no un texto que haya que adivinar).
+        const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array',cellDates:true});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:'',raw:true});
       }
       processData(rows,file.name);
     }catch(err){showToast('Error','No se pudo leer: '+err.message,'#ff4d6d');}
@@ -803,8 +859,10 @@ async function fetchGSheetData(silent){
   }
 
   try{
-    const wb = XLSX.read(csvText,{type:'string'});
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+    // Igual que con archivos .csv: se usa el parser propio (parseCSVText) en vez de
+    // XLSX.read, para que las fechas "dd/mm/aaaa" del Sheet no sean reinterpretadas
+    // como mm/dd por la detección automática de fechas de XLSX (ver nota en FILE READER).
+    const rows = parseCSVText(csvText);
     processData(rows,'Google Sheet (sincronizado)');
     document.getElementById('sync-status').textContent = '✅ Última sync: '+new Date().toLocaleTimeString('es-PE');
   }catch(err){
@@ -875,56 +933,48 @@ function processData(rows,fileName){
     for(let i=headerIdx+1;i<rows.length;i++){
       const r=rows[i];
       const mesTexto=String(r[mi]||'').trim().toUpperCase(); // columna MES tal cual viene en el archivo
-      const rawFecha=String(r[fi2]||'').trim();
+      const fechaCell=r[fi2]; // valor crudo de la celda: puede ser texto "dd/mm/aaaa" o un objeto Date (Excel)
+      const rawFecha=String(fechaCell||'').trim();
       if(!mesTexto && !rawFecha) continue; // fila totalmente vacía
       if(mesTexto==='MES') continue; // encabezado repetido
 
       // ── EXTRACCIÓN DE DÍA Y MES DIRECTAMENTE DESDE LA FECHA (dd/mm/aaaa) ──
       //
-      // FIX: el filtro de "Mes" agrupaba las filas usando la columna de texto MES tal
-      // cual viene en el archivo, y el filtro de "Día" intentaba adivinar si la fecha
-      // venía en formato DD/MM o MM/DD comparándola contra ese mismo texto. Eso fallaba
-      // en dos casos reales encontrados en el archivo consolidado:
-      //   1) Hay filas donde el texto de MES no coincide con la fecha registrada
-      //      (ej. fila con MES="JUNIO" pero FECHA="03/07/2026", que es julio). Como el
-      //      "Día" se derivaba comparando contra ese MES incorrecto, el día quedaba mal
-      //      calculado o la fila terminaba agrupada en el mes equivocado.
-      //   2) Al depender de esa comparación, cualquier mes cuyo número coincidiera con
-      //      alguno de los dos componentes de la fecha (ej. julio = "07") podía perder
-      //      días completos del filtro.
-      // Ahora, como el formato de fecha del sistema está confirmado como "dd/mm/aaaa",
-      // se extrae el día (dd) y el mes (mm, convertido a su nombre) SIEMPRE directamente
-      // de la fecha registrada. Así "Mes" y "Día" siempre quedan consistentes entre sí
-      // (ambos vienen del mismo dato), y una columna MES mal escrita ya no afecta el filtro.
-      // Si la fecha no se puede interpretar, se usa el texto de la columna MES como respaldo.
+      // FIX (día/mes/totales incorrectos): el día y el mes SIEMPRE se derivan de la fecha
+      // registrada, nunca de la columna de texto MES (que puede venir mal escrita) ni de
+      // conversiones ambiguas de librerías externas. Reglas, en orden de prioridad:
+      //   1) Si la celda ya llegó como objeto Date real (archivos .xlsx/.xls, donde Excel
+      //      guarda la fecha como valor, no como texto ambiguo), se lee directamente con
+      //      getUTCDate()/getUTCMonth(): no hay ambigüedad DD/MM vs MM/DD porque no hay
+      //      texto que adivinar, y no se aplican parches de "+1 día" que antes corrompían
+      //      la fecha real.
+      //   2) Si la celda es texto "dd/mm/aaaa" o "dd-mm-aaaa" (el formato confirmado de
+      //      este sistema, incluido el de este CSV), se extrae el día y el mes directamente
+      //      de esos dos primeros números, en ESE orden (día primero). Este archivo CSV
+      //      ahora se lee con un parser propio que conserva el texto tal cual viene, sin que
+      //      ninguna librería lo reinterprete como mes/día al estilo estadounidense.
+      //   3) Si viniera en formato ISO "aaaa-mm-dd", se soporta también como respaldo.
+      // Si la fecha no se puede interpretar, se usa el texto de la columna MES como respaldo,
+      // y solo en ese caso el día queda vacío (no se puede saber sin la fecha exacta).
       let diaStr='';
       let mes=mesTexto;
 
-      if(rawFecha){
-        // Caso 1: número de serie de Excel (ej. 45658), típico al pegar celdas con formato fecha
-        if(/^\d{5}(\.\d+)?$/.test(rawFecha)){
-          const excelDate=Float64Array.from([parseFloat(rawFecha)])[0];
-          // Ajuste de desfase histórico de bisiestos de Excel (1900)
-          const dateObj=new Date(Math.round((excelDate-25569)*86400*1000));
-          if(!isNaN(dateObj.getTime())){
-            // Añadir +1 día para mitigar desfases de zona horaria local durante la conversión UTC
-            dateObj.setUTCDate(dateObj.getUTCDate()+1);
-            diaStr=String(dateObj.getUTCDate()).padStart(2,'0');
-            const mesNum=dateObj.getUTCMonth()+1;
-            if(mesNum>=1&&mesNum<=12) mes=MES_ORDER[mesNum-1];
-          }
-        }
-        // Caso 2: texto "dd/mm/aaaa" o "dd-mm-aaaa" (formato confirmado del sistema)
-        else if(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.test(rawFecha)){
-          const [,ddS,mmS]=rawFecha.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-          const dd=parseInt(ddS,10), mm=parseInt(mmS,10);
-          if(mm>=1&&mm<=12){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
-        }
+      if(fechaCell instanceof Date && !isNaN(fechaCell.getTime())){
+        // Caso 1: objeto Date real (viene de un archivo Excel binario, cellDates:true)
+        diaStr=String(fechaCell.getUTCDate()).padStart(2,'0');
+        const mesNum=fechaCell.getUTCMonth()+1;
+        if(mesNum>=1&&mesNum<=12) mes=MES_ORDER[mesNum-1];
+      } else if(rawFecha){
+        // Caso 2: texto "dd/mm/aaaa" o "dd-mm-aaaa" (formato confirmado del sistema, día primero)
+        const m1=rawFecha.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
         // Caso 3: texto "aaaa-mm-dd" (formato ISO, por si la fuente cambia de origen)
-        else if(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.test(rawFecha)){
-          const [,,mmS,ddS]=rawFecha.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
-          const dd=parseInt(ddS,10), mm=parseInt(mmS,10);
-          if(mm>=1&&mm<=12){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
+        const m2=!m1 && rawFecha.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+        if(m1){
+          const dd=parseInt(m1[1],10), mm=parseInt(m1[2],10);
+          if(mm>=1&&mm<=12&&dd>=1&&dd<=31){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
+        } else if(m2){
+          const dd=parseInt(m2[3],10), mm=parseInt(m2[2],10);
+          if(mm>=1&&mm<=12&&dd>=1&&dd<=31){ diaStr=String(dd).padStart(2,'0'); mes=MES_ORDER[mm-1]; }
         }
       }
 
