@@ -689,6 +689,23 @@ function segmentFitsLabel(datalabelCtx,fontSize=11,minPad=10){
   }catch(e){ return true; }
 }
 
+// Cuenta cuántos segmentos ANTERIORES (en el orden de apilado) de esta misma
+// fila también quedan "afuera" de su barra por ser angostos, para separar
+// progresivamente cada etiqueta sucesiva y evitar que se amontonen los
+// números cuando hay varios segmentos angostos seguidos (ej. dos segmentos
+// chicos uno junto al otro).
+function outsideLabelRank(datalabelCtx){
+  try{
+    const {chart,dataIndex,datasetIndex}=datalabelCtx;
+    let rank=0;
+    for(let i=0;i<datasetIndex;i++){
+      const ds=chart.data.datasets[i];
+      if(ds.data[dataIndex]>0 && !segmentFitsLabel({chart,dataset:ds,dataIndex})) rank++;
+    }
+    return rank;
+  }catch(e){ return 0; }
+}
+
 // ── PARSER CSV PROPIO (sin pasar por XLSX para archivos .csv) ───────────────
 //
 // FIX RAÍZ DEL PROBLEMA DE DÍAS/MESES INCORRECTOS Y TOTALES QUE NO CUADRAN:
@@ -1779,16 +1796,20 @@ function buildTipoMod(data){
           // Si el segmento es lo bastante ancho como para leer el número
           // sobre su propio color, el valor va centrado adentro; si el
           // segmento es angosto (barra corta), el valor se dibuja afuera,
-          // pegado al borde derecho de ese segmento, para no perder legibilidad.
-          color:ctx=>segmentFitsLabel(ctx)?autoLabel(ctx.dataset.backgroundColor):legendColor(),
+          // usando el MISMO color que su segmento (no un gris neutro), para
+          // que se siga distinguiendo a qué estado pertenece cada número aun
+          // estando fuera de la barra. Si hay varios segmentos angostos
+          // seguidos en la misma fila, se van separando un poco más entre sí
+          // para que no se amontonen los números.
+          color:ctx=>segmentFitsLabel(ctx)?autoLabel(ctx.dataset.backgroundColor):ctx.dataset.borderColor,
           textStrokeColor:ctx=>segmentFitsLabel(ctx)
             ?autoLabelStroke(ctx.dataset.backgroundColor)
-            :(isDarkMode?'rgba(13,15,20,.85)':'rgba(255,255,255,.85)'),
-          textStrokeWidth:ctx=>segmentFitsLabel(ctx)?1.5:2.5,
+            :(isDarkMode?'rgba(13,15,20,.9)':'rgba(255,255,255,.9)'),
+          textStrokeWidth:ctx=>segmentFitsLabel(ctx)?1.5:3,
           font:{size:11,weight:'700'},
           anchor:ctx=>segmentFitsLabel(ctx)?'center':'end',
           align:ctx=>segmentFitsLabel(ctx)?'center':'right',
-          offset:ctx=>segmentFitsLabel(ctx)?0:4,
+          offset:ctx=>segmentFitsLabel(ctx)?0:(4+outsideLabelRank(ctx)*11),
           clamp:true,
           formatter:v=>v>0?v.toLocaleString('es'):'',
         }
