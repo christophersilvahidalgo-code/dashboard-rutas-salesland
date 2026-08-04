@@ -667,6 +667,28 @@ function lum(hex){
 function autoLabel(bg){ return lum(bg.slice(0,7))>0.55?'#161616':'#ffffff'; }
 function autoLabelStroke(bg){ return lum(bg.slice(0,7))>0.55?'rgba(255,255,255,.6)':'rgba(0,0,0,.5)'; }
 
+// Determina si el valor de un segmento de una barra apilada horizontal cabe
+// legible DENTRO del propio segmento: mide el ancho real del texto (canvas
+// measureText) contra el ancho en píxeles que ocupa ese segmento en el eje X
+// en ese momento. Si no entra con un margen mínimo, el valor debe dibujarse
+// afuera de la barra en vez de encimarse con ella.
+function segmentFitsLabel(datalabelCtx,fontSize=11,minPad=10){
+  try{
+    const chart=datalabelCtx.chart;
+    const xScale=chart.scales.x;
+    const value=datalabelCtx.dataset.data[datalabelCtx.dataIndex];
+    if(!value) return true;
+    const segPx=Math.abs(xScale.getPixelForValue(value)-xScale.getPixelForValue(0));
+    const text=value.toLocaleString('es');
+    const mctx=chart.ctx;
+    mctx.save();
+    mctx.font=`700 ${fontSize}px 'Segoe UI',system-ui,sans-serif`;
+    const textW=mctx.measureText(text).width;
+    mctx.restore();
+    return segPx>=(textW+minPad);
+  }catch(e){ return true; }
+}
+
 // ── PARSER CSV PROPIO (sin pasar por XLSX para archivos .csv) ───────────────
 //
 // FIX RAÍZ DEL PROBLEMA DE DÍAS/MESES INCORRECTOS Y TOTALES QUE NO CUADRAN:
@@ -1754,17 +1776,28 @@ function buildTipoMod(data){
         tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.dataset.label.charAt(0)}${ctx.dataset.label.slice(1).toLowerCase()}: ${ctx.parsed.x.toLocaleString('es')}`}},
         datalabels:{
           display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,
-          color:ctx=>autoLabel(ctx.dataset.backgroundColor),
-          textStrokeColor:ctx=>autoLabelStroke(ctx.dataset.backgroundColor),textStrokeWidth:1.5,
-          font:{size:11,weight:'700'},anchor:'center',align:'center',
+          // Si el segmento es lo bastante ancho como para leer el número
+          // sobre su propio color, el valor va centrado adentro; si el
+          // segmento es angosto (barra corta), el valor se dibuja afuera,
+          // pegado al borde derecho de ese segmento, para no perder legibilidad.
+          color:ctx=>segmentFitsLabel(ctx)?autoLabel(ctx.dataset.backgroundColor):legendColor(),
+          textStrokeColor:ctx=>segmentFitsLabel(ctx)
+            ?autoLabelStroke(ctx.dataset.backgroundColor)
+            :(isDarkMode?'rgba(13,15,20,.85)':'rgba(255,255,255,.85)'),
+          textStrokeWidth:ctx=>segmentFitsLabel(ctx)?1.5:2.5,
+          font:{size:11,weight:'700'},
+          anchor:ctx=>segmentFitsLabel(ctx)?'center':'end',
+          align:ctx=>segmentFitsLabel(ctx)?'center':'right',
+          offset:ctx=>segmentFitsLabel(ctx)?0:4,
+          clamp:true,
           formatter:v=>v>0?v.toLocaleString('es'):'',
         }
       },
       scales:{
-        x:{...scaleOpts(),stacked:true},
+        x:{...scaleOpts(),stacked:true,grace:'12%'},
         y:{...yCategoryScale(10),stacked:true},
       },
-      layout:{padding:{right:20}},
+      layout:{padding:{right:40}},
     }
   },'tipomod');
 }
