@@ -182,6 +182,15 @@
   /* ── MAIN ── */
   main{padding:26px 32px;display:flex;flex-direction:column;gap:22px}
 
+  /* ── CIUDAD PIN (badge que muestra la(s) ciudad(es) filtrada(s)) ── */
+  .city-pin-row{display:flex;align-items:center}
+  .city-pin-badge{display:inline-flex;align-items:center;gap:8px;background:var(--select-bg);
+    border:1.5px solid var(--accent2);color:var(--text);border-radius:20px;padding:6px 16px;
+    font-size:.76rem;font-weight:700;letter-spacing:.02em;white-space:nowrap;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;box-shadow:0 0 0 3px rgba(0,212,255,.08)}
+  .city-pin-badge .pin-icon{font-size:.95rem;flex-shrink:0}
+  .city-pin-badge .pin-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
   /* ── CARDS ── */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
   .card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);
@@ -367,6 +376,7 @@
   </div>
 
   <button class="btn-reset" onclick="resetFilters()">↺ Limpiar</button>
+  <button class="sync-btn" id="btn-capture-view" title="Captura todos los gráficos visibles según los filtros seleccionados" onclick="captureFilteredView()">📸 Captura de Vista Filtrada</button>
 </div>
 
 <main id="main-content">
@@ -1143,6 +1153,26 @@ function resetFilters(){
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 function countBy(data,key){const m={};data.forEach(d=>{const v=d[key];m[v]=(m[v]||0)+1;});return m;}
 function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+
+// Divide una etiqueta larga en varias líneas (según cantidad de caracteres) para
+// que el texto se muestre completo en el eje, sin ser cortado. Chart.js acepta
+// un arreglo de strings como tick y dibuja cada elemento como una línea, lo que,
+// combinado con ticks.crossAlign:'center', deja el texto centrado/justificado
+// según el largo de cada línea.
+function wrapTickLabel(label,maxLen=18){
+  if(label==null) return label;
+  const str=String(label);
+  if(str.length<=maxLen) return str;
+  const words=str.split(' ');
+  const lines=[]; let cur='';
+  words.forEach(w=>{
+    const test=(cur?cur+' ':'')+w;
+    if(test.length>maxLen && cur){ lines.push(cur); cur=w; }
+    else cur=test;
+  });
+  if(cur) lines.push(cur);
+  return lines.length>1?lines:str;
+}
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 function mkChart(id,cfg,labelKey){
   destroyChart(id);
@@ -1424,7 +1454,18 @@ function renderDashboard(){
   };
   const cardsHtml = CARD_DEFS.filter(c=>visibleCards.has(c.key)).map(c=>cardHtmlMap[c.key]).join('');
 
+  // Pin de ciudad(es) seleccionada(s) en el filtro "Ciudad": se muestra solo si
+  // hay al menos una ciudad elegida en el filtro; si el filtro está en "Todas"
+  // (sin selección), el pin no se renderiza.
+  const ciudadesSel = selectedFilters.ciudad || [];
+  const cityPinHtml = ciudadesSel.length
+    ? `<div class="city-pin-row"><div class="city-pin-badge" title="${ciudadesSel.join(', ')}">
+        <span class="pin-icon">📍</span><span class="pin-text">${ciudadesSel.join(', ')}</span>
+      </div></div>`
+    : '';
+
   document.getElementById('main-content').innerHTML=`
+    ${cityPinHtml}
     ${cardsHtml ? `<div class="cards">${cardsHtml}</div>` : ''}
     ${chartsHtml}`;
 
@@ -1465,6 +1506,28 @@ async function captureBox(boxId,title){
     showToast('✅ Capturado','Imagen descargada: '+link.download,'#00e676');
   }catch(err){
     showToast('Error','No se pudo capturar: '+err.message,'#ff4d6d');
+  }
+}
+
+// ── CAPTURA DE VISTA FILTRADA (todos los gráficos visibles según filtros) ───
+async function captureFilteredView(){
+  const el=document.getElementById('main-content'); if(!el) return;
+  const btn=document.getElementById('btn-capture-view');
+  if(btn) btn.disabled=true;
+  showToast('Capturando…','Vista filtrada completa','#00d4ff');
+  try{
+    const canvas=await html2canvas(el,{backgroundColor:getComputedStyle(document.body).backgroundColor,scale:2,useCORS:true});
+    const link=document.createElement('a');
+    const fecha=new Date().toISOString().slice(0,10);
+    const horaMin=new Date().toISOString().slice(11,16).replace(':','');
+    link.download=`vista-filtrada-${fecha}-${horaMin}.png`;
+    link.href=canvas.toDataURL('image/png');
+    link.click();
+    showToast('✅ Capturado','Vista filtrada descargada: '+link.download,'#00e676');
+  }catch(err){
+    showToast('Error','No se pudo capturar la vista: '+err.message,'#ff4d6d');
+  }finally{
+    if(btn) btn.disabled=false;
   }
 }
 
@@ -1604,7 +1667,13 @@ function buildTipoMod(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:10}},grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{
+        ticks:{
+          color:tickColor(),font:{size:10},autoSkip:false,crossAlign:'center',
+          callback:function(value){ return wrapTickLabel(this.getLabelForValue(value),18); },
+        },
+        grid:{display:false},
+      }},
       layout:{padding:{right:60}},
     }
   },'tipomod');
