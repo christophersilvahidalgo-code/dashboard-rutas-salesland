@@ -1154,24 +1154,49 @@ function resetFilters(){
 function countBy(data,key){const m={};data.forEach(d=>{const v=d[key];m[v]=(m[v]||0)+1;});return m;}
 function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
 
-// Divide una etiqueta larga en varias líneas (según cantidad de caracteres) para
-// que el texto se muestre completo en el eje, sin ser cortado. Chart.js acepta
-// un arreglo de strings como tick y dibuja cada elemento como una línea, lo que,
-// combinado con ticks.crossAlign:'center', deja el texto centrado/justificado
-// según el largo de cada línea.
-function wrapTickLabel(label,maxLen=18){
-  if(label==null) return label;
-  const str=String(label);
-  if(str.length<=maxLen) return str;
-  const words=str.split(' ');
-  const lines=[]; let cur='';
-  words.forEach(w=>{
-    const test=(cur?cur+' ':'')+w;
-    if(test.length>maxLen && cur){ lines.push(cur); cur=w; }
-    else cur=test;
-  });
-  if(cur) lines.push(cur);
+// Envuelve una etiqueta larga del eje en varias líneas, midiendo el ancho real
+// del texto (canvas measureText) contra el ancho disponible en el gráfico en
+// ESE momento. Como usa el ancho real del chart (scale.chart.width), el wrap
+// se recalcula solo cada vez que el cuadro cambia de tamaño (chico/mediano/
+// grande) o la ventana se redimensiona, así el texto siempre aparece completo.
+function wrapTickLabelAuto(scale,label){
+  const str=(label==null)?'':String(label);
+  if(!str) return str;
+  const chartWidth=(scale.chart && scale.chart.width) ? scale.chart.width : 360;
+  // Espacio reservado para las etiquetas del eje Y: hasta ~42% del ancho del
+  // gráfico, con un mínimo y un máximo para no invadir el área de barras ni
+  // quedar demasiado angosto quando el cuadro es pequeño.
+  const maxPx=Math.max(60,Math.min(230,chartWidth*0.42));
+  const fontSize=(scale.options.ticks.font && scale.options.ticks.font.size) || 10;
+  const ctx=scale.ctx;
+  let lines=[str];
+  try{
+    ctx.save();
+    ctx.font=`${fontSize}px 'Segoe UI',system-ui,sans-serif`;
+    if(ctx.measureText(str).width>maxPx){
+      const words=str.split(' ');
+      const built=[]; let cur='';
+      words.forEach(w=>{
+        const test=cur?`${cur} ${w}`:w;
+        if(ctx.measureText(test).width>maxPx && cur){ built.push(cur); cur=w; }
+        else cur=test;
+      });
+      if(cur) built.push(cur);
+      lines=built.length?built:[str];
+    }
+    ctx.restore();
+  }catch(e){ lines=[str]; }
   return lines.length>1?lines:str;
+}
+
+// Config de ticks reutilizable para ejes Y categóricos con texto largo:
+// texto completo (sin truncar), centrado/justificado según su largo, y que
+// se re-ajusta automáticamente en cualquier tamaño de gráfico (s/m/l).
+function yLabelTicks(fontSize=10){
+  return {
+    color:tickColor(),font:{size:fontSize},autoSkip:false,crossAlign:'center',
+    callback:function(value){ return wrapTickLabelAuto(this,this.getLabelForValue(value)); },
+  };
 }
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 function mkChart(id,cfg,labelKey){
@@ -1620,7 +1645,7 @@ function buildCiudad(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:11}},grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(11),grid:{display:false}}},
       layout:{padding:{right:55}},
     }
   },'ciudad');
@@ -1668,10 +1693,7 @@ function buildTipoMod(data){
         }
       },
       scales:{x:{...scaleOpts()},y:{
-        ticks:{
-          color:tickColor(),font:{size:10},autoSkip:false,crossAlign:'center',
-          callback:function(value){ return wrapTickLabel(this.getLabelForValue(value),18); },
-        },
+        ticks:yLabelTicks(10),
         grid:{display:false},
       }},
       layout:{padding:{right:60}},
@@ -1732,7 +1754,7 @@ function buildMotivo(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:10}},grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(10),grid:{display:false}}},
       layout:{padding:{right:60}},
     }
   },'motivo');
@@ -1759,7 +1781,7 @@ function buildMedio(data){
           formatter:v=>`${v.toLocaleString('es')} (${total?Math.round(v/total*100):0}%)`,padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:11}},grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(11),grid:{display:false}}},
       layout:{padding:{right:85}},
     }
   },'medio');
