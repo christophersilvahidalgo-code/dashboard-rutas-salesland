@@ -9,14 +9,14 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
-  /* ── THEME TOKENS (overridden by JS) ─────────────────────────────────── */
+  /* ── THEME TOKENS (overridden by JS) — por defecto: tema "Claro" ─────── */
   :root {
-    --bg:#0d0f14; --bg2:#161922; --panel:#1a1f2e; --border:#252a35;
-    --text:#f0f4ff; --text2:#94a3b8; --muted:#64748b;
+    --bg:#f1f5f9; --bg2:#e2e8f0; --panel:#e2e8f0; --border:#cbd5e1;
+    --text:#0f172a; --text2:#475569; --muted:#64748b;
     --accent1:#ff4d6d; --accent2:#00d4ff; --accent3:#bf5af2;
     --accent4:#00e676; --accent5:#ffab00; --accent6:#ff6b35;
-    --card-bg:#1a1f2e; --card-border:#2d3548;
-    --select-bg:#111827; --radius:12px; --shadow:0 4px 28px rgba(0,0,0,.45);
+    --card-bg:#ffffff; --card-border:#cbd5e1;
+    --select-bg:#f8fafc; --radius:12px; --shadow:0 4px 28px rgba(0,0,0,.12);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;transition:background .35s,color .35s}
@@ -283,16 +283,7 @@
 
   <label>🖥️ Fondo:</label>
   <div class="chip-row" id="bg-row">
-    <button class="chip active" data-bg="dark" onclick="setBg('dark',this)">
-      <div class="bg-swatch" style="background:#0d0f14"></div>Oscuro
-    </button>
-    <button class="chip" data-bg="slate" onclick="setBg('slate',this)">
-      <div class="bg-swatch" style="background:#0f172a"></div>Pizarra
-    </button>
-    <button class="chip" data-bg="charcoal" onclick="setBg('charcoal',this)">
-      <div class="bg-swatch" style="background:#1c1c2e"></div>Carbón
-    </button>
-    <button class="chip" data-bg="light" onclick="setBg('light',this)">
+    <button class="chip active" data-bg="light" onclick="setBg('light',this)">
       <div class="bg-swatch" style="background:#f1f5f9;border-color:#cbd5e1"></div>Claro
     </button>
     <button class="chip" data-bg="white" onclick="setBg('white',this)">
@@ -300,15 +291,6 @@
     </button>
     <button class="chip" data-bg="cream" onclick="setBg('cream',this)">
       <div class="bg-swatch" style="background:#fdf6ec;border-color:#e5d8c0"></div>Crema
-    </button>
-    <button class="chip" data-bg="navy" onclick="setBg('navy',this)">
-      <div class="bg-swatch" style="background:#001233"></div>Marino
-    </button>
-    <button class="chip" data-bg="forest" onclick="setBg('forest',this)">
-      <div class="bg-swatch" style="background:#0a2a1a"></div>Bosque
-    </button>
-    <button class="chip" data-bg="grad-sunset" onclick="setBg('grad-sunset',this)">
-      <div class="bg-swatch" style="background:linear-gradient(135deg,#1a0533,#2d1b69)"></div>Degradado
     </button>
   </div>
 
@@ -417,9 +399,6 @@ const PALETTE_CATALOG = {
   categorica: {
     label:'Categórica',
     variants:{
-      corporativo: {label:'Corporativo Azul', colors:['#2C3E50','#4A6FA5','#5B8C7E','#8B7355','#6E5773','#A67C52','#546A76','#7C9885','#9A6A6A','#5C6B73','#8C8577','#4F6D7A','#B08968','#6B818C','#7D6B7D','#5A7684','#9C8AA5','#7A8B99','#4A5859','#8F9779']},
-      ejecutivo:   {label:'Ejecutivo Grafito', colors:['#1B263B','#415A77','#778DA9','#5C677D','#2B2D42','#6D6875','#4A4E69','#9A8C98','#495867','#577399','#425563','#67697C','#8A817C','#463F3A','#8B8C89','#BCB8B1','#3E5C64','#7A6C5D','#5E4B4B','#556270']},
-      sobrio:      {label:'Sobrio Tierra',     colors:['#1F4E5F','#5B7B7A','#8E9775','#C9A66B','#A45C40','#6E4555','#3B6064','#87A196','#D1BB9E','#9C6B4E','#5C4742','#B58B5E','#3E5C50','#7A6C5D','#A4747A','#556B67','#8C7853','#4D4A45','#6B7B8C','#997B66']},
       // Paleta a pedido del usuario: parte de los 4 colores de acento del dashboard
       // (verde #00e676, rojo/rosa #ff4d6d, morado #bf5af2, ámbar #ffab00) y suma, para
       // cada uno, tonos MÁS OSCUROS, MÁS CLAROS y variantes de matiz cercano (verde azulado,
@@ -446,7 +425,8 @@ const ESTADO_FIXED = (function(){
 })();
 
 let currentPalType = 'categorica';
-let currentPalVariant = localStorage.getItem('pal-variant') || 'corporativo';
+let currentPalVariant = localStorage.getItem('pal-variant') || 'marca';
+if(!PALETTE_CATALOG.categorica.variants[currentPalVariant]) currentPalVariant = 'marca';
 
 // ── Interpolación de color (hex) ─────────────────────────────────────────────
 function hexToRgb(hex){
@@ -542,24 +522,6 @@ renderVariantChips();
 
 // ── BACKGROUNDS ─────────────────────────────────────────────────────────────
 const BG_THEMES = {
-  dark: {
-    '--bg':'#0d0f14','--bg2':'#111318','--panel':'#161922','--border':'#252a35',
-    '--text':'#f0f4ff','--text2':'#94a3b8','--muted':'#64748b',
-    '--card-bg':'#1a1f2e','--card-border':'#2d3548','--select-bg':'#111827',
-    _dark: true, _gradient: false,
-  },
-  slate: {
-    '--bg':'#0f172a','--bg2':'#1e293b','--panel':'#1e293b','--border':'#334155',
-    '--text':'#f1f5f9','--text2':'#94a3b8','--muted':'#64748b',
-    '--card-bg':'#1e293b','--card-border':'#334155','--select-bg':'#0f172a',
-    _dark: true, _gradient: false,
-  },
-  charcoal: {
-    '--bg':'#1c1c2e','--bg2':'#16213e','--panel':'#0f3460','--border':'#1a1a3e',
-    '--text':'#eaeaea','--text2':'#a0a0c0','--muted':'#6060a0',
-    '--card-bg':'#16213e','--card-border':'#1a1a4e','--select-bg':'#1c1c2e',
-    _dark: true, _gradient: false,
-  },
   light: {
     '--bg':'#f1f5f9','--bg2':'#e2e8f0','--panel':'#e2e8f0','--border':'#cbd5e1',
     '--text':'#0f172a','--text2':'#475569','--muted':'#64748b',
@@ -577,25 +539,6 @@ const BG_THEMES = {
     '--text':'#1a0e00','--text2':'#5c4a30','--muted':'#8a7050',
     '--card-bg':'#fffbf5','--card-border':'#e8d8b8','--select-bg':'#fdf6ec',
     _dark: false, _gradient: false,
-  },
-  navy: {
-    '--bg':'#001233','--bg2':'#001845','--panel':'#002060','--border':'#003090',
-    '--text':'#e8f4ff','--text2':'#7aaddd','--muted':'#4080b0',
-    '--card-bg':'#001845','--card-border':'#003080','--select-bg':'#001233',
-    _dark: true, _gradient: false,
-  },
-  forest: {
-    '--bg':'#0a2a1a','--bg2':'#0d3520','--panel':'#0d3520','--border':'#154a28',
-    '--text':'#e8fff2','--text2':'#7acd9a','--muted':'#3a8060',
-    '--card-bg':'#0d3520','--card-border':'#1a5a30','--select-bg':'#0a2a1a',
-    _dark: true, _gradient: false,
-  },
-  'grad-sunset': {
-    '--bg':'linear-gradient(150deg,#1a0533 0%,#2d1b69 40%,#1a2a4a 100%)','--bg2':'rgba(45,27,105,.7)',
-    '--panel':'rgba(30,15,60,.8)','--border':'rgba(120,60,200,.3)',
-    '--text':'#f5eeff','--text2':'#c0a0e8','--muted':'#8060b0',
-    '--card-bg':'rgba(35,20,65,.9)','--card-border':'rgba(140,80,220,.35)','--select-bg':'rgba(20,10,40,.9)',
-    _dark: true, _gradient: true,
   },
 };
 
@@ -617,8 +560,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
   }
 });
 
-let currentBg   = 'dark';
-let isDarkMode  = true;
+let currentBg   = 'light';
+let isDarkMode  = false;
 let allData     = [];
 let charts      = {};
 const MES_ORDER = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
@@ -673,7 +616,7 @@ function setBg(name, btn) {
 // orden de gráficos / gráficos visibles / etiquetas / tarjetas, que ya persisten).
 window.addEventListener('DOMContentLoaded', ()=>{
   const savedBg = localStorage.getItem('bg-theme');
-  if(savedBg && BG_THEMES[savedBg] && savedBg !== 'dark'){
+  if(savedBg && BG_THEMES[savedBg] && savedBg !== 'light'){
     const btn = document.querySelector(`#bg-row .chip[data-bg="${savedBg}"]`);
     if(btn){
       currentBg = savedBg;
@@ -1247,6 +1190,7 @@ const CHART_DEFS = [
   {key:'estadomes',boxId:'box-estadomes',canvasId:'ch-estadomes',title:'Estado por Mes',         sub:'Evolución mensual de estados',                     h:300, build:data=>buildEstadoMes(data)},
   {key:'ciudad',   boxId:'box-ciudad',   canvasId:'ch-ciudad',   title:'Top Ciudades',           sub:'Por volumen de solicitudes',                       h:320, build:data=>buildCiudad(data)},
   {key:'tipomod',  boxId:'box-tipomod',  canvasId:'ch-tipomod',  title:'Tipo de Modificación',   sub:'Top 10 categorías',                                h:320, build:data=>buildTipoMod(data)},
+  {key:'motivo',   boxId:'box-motivo',   canvasId:'ch-motivo',   title:'Tipo de Modificaciones', sub:'Motivo · color según estado predominante, top 10', h:340, build:data=>buildMotivo(data)},
   {key:'medio',    boxId:'box-medio',    canvasId:'ch-medio',    title:'Medio de Solicitud',     sub:'Canales de ingreso, ordenados por volumen',        h:280, build:data=>buildMedio(data)},
   {key:'sol',      boxId:'box-sol',      canvasId:'ch-sol',      title:'Solicitante',            sub:'Por rol',                                          h:280, build:data=>buildSolicitante(data)},
 ];
@@ -1664,6 +1608,65 @@ function buildTipoMod(data){
       layout:{padding:{right:60}},
     }
   },'tipomod');
+}
+
+// ── TIPO DE MODIFICACIONES (por motivo, coloreado por estado predominante) ──
+// A diferencia de "Tipo de Modificación" (que cuenta la columna tipoMod con un
+// color por categoría de la paleta), este gráfico usa la columna "motivo" y
+// pinta cada barra con el color del ESTADO que más se repite dentro de ese
+// motivo (Impactado/Observado/Pendiente) — igual que el gráfico de referencia:
+// una sola barra por motivo, coloreada según a qué estado pertenece mayormente.
+function buildMotivo(data){
+  const filt=data.filter(d=>d.motivo&&d.motivo.trim()&&d.motivo.toUpperCase()!=='MOTIVO');
+  const map={};
+  filt.forEach(d=>{
+    if(!map[d.motivo]) map[d.motivo]={count:0,porEstado:{}};
+    map[d.motivo].count++;
+    map[d.motivo].porEstado[d.estado]=(map[d.motivo].porEstado[d.estado]||0)+1;
+  });
+  const rows=Object.entries(map).map(([motivo,info])=>{
+    const estadoPredominante=Object.entries(info.porEstado).sort((a,b)=>b[1]-a[1])[0][0];
+    return {motivo,count:info.count,estado:estadoPredominante};
+  }).sort((a,b)=>b.count-a.count).slice(0,10);
+
+  if(!rows.length){
+    mkChart('ch-motivo',{type:'bar',data:{labels:[],datasets:[]},options:{responsive:true,maintainAspectRatio:false}},'motivo');
+    return;
+  }
+
+  mkChart('ch-motivo',{type:'bar',
+    data:{labels:rows.map(r=>r.motivo),datasets:[{
+      label:'Cantidad',
+      data:rows.map(r=>r.count),
+      backgroundColor:rows.map(r=>ECOL(r.estado)+'d0'),
+      borderColor:rows.map(r=>ECOL(r.estado)),
+      borderWidth:1,borderRadius:4,
+    }]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{
+        // Leyenda fija con los 3 estados (no depende del dataset, que es uno solo),
+        // igual que el gráfico de referencia: ● Ejecutado ● Observado ● Pendiente.
+        legend:{
+          display:true,position:'bottom',
+          labels:{
+            boxWidth:10,padding:14,font:{size:11},color:legendColor(),
+            generateLabels:()=>ESTADO_ORDER.map(e=>({
+              text:e.charAt(0)+e.slice(1).toLowerCase(),
+              fillStyle:ECOL(e),strokeStyle:ECOL(e),lineWidth:0,
+            })),
+          }
+        },
+        tooltip:{...tip(),callbacks:{label:ctx=>` ${rows[ctx.dataIndex].estado.charAt(0)}${rows[ctx.dataIndex].estado.slice(1).toLowerCase()}: ${ctx.parsed.x.toLocaleString('es')}`}},
+        datalabels:{
+          color:legendColor(),font:{size:11,weight:'700'},
+          anchor:'end',align:'right',clamp:true,
+          formatter:v=>v.toLocaleString('es'),padding:{right:4},
+        }
+      },
+      scales:{x:{...scaleOpts()},y:{ticks:{color:tickColor(),font:{size:10}},grid:{display:false}}},
+      layout:{padding:{right:60}},
+    }
+  },'motivo');
 }
 
 function buildMedio(data){
