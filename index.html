@@ -316,6 +316,8 @@
 
   <label>📊 Gráficos en pantalla:</label>
   <div class="chip-row" id="chartview-row"></div>
+  <button class="chip" title="Mostrar todos los gráficos" onclick="setAllCharts(true)">✓ Todos</button>
+  <button class="chip" title="Ocultar todos los gráficos" onclick="setAllCharts(false)">✕ Ninguno</button>
 
   <div class="ctrl-sep"></div>
 
@@ -328,11 +330,15 @@
 
   <label>🏷️ Etiquetas a mostrar:</label>
   <div class="chip-row" id="cardview-row"></div>
+  <button class="chip" title="Mostrar todas las tarjetas" onclick="setAllCards(true)">✓ Todas</button>
+  <button class="chip" title="Ocultar todas las tarjetas" onclick="setAllCards(false)">✕ Ninguna</button>
 
   <div class="ctrl-sep"></div>
 
   <label>🔢 Valores en gráficos:</label>
   <div class="chip-row" id="labelview-row"></div>
+  <button class="chip" title="Mostrar todos los valores" onclick="setAllLabels(true)">✓ Todos</button>
+  <button class="chip" title="Ocultar todos los valores" onclick="setAllLabels(false)">✕ Ninguno</button>
 </div>
 
 <div class="filters" id="filters-bar" style="display:none">
@@ -370,6 +376,12 @@
     <span class="dropdown-checklist-label">Solicitante</span>
     <button class="dropdown-checklist-btn" id="btn-f-solicitante">Todos</button>
     <div class="dropdown-checklist-content" id="content-f-solicitante"></div>
+  </div>
+
+  <div class="dropdown-checklist" id="container-f-medio">
+    <span class="dropdown-checklist-label">Medio</span>
+    <button class="dropdown-checklist-btn" id="btn-f-medio">Todos</button>
+    <div class="dropdown-checklist-content" id="content-f-medio"></div>
   </div>
 
   <button class="btn-reset" onclick="resetFilters()">↺ Limpiar</button>
@@ -434,7 +446,7 @@ const ESTADO_FIXED = (function(){
 })();
 
 let currentPalType = 'categorica';
-let currentPalVariant = 'corporativo';
+let currentPalVariant = localStorage.getItem('pal-variant') || 'corporativo';
 
 // ── Interpolación de color (hex) ─────────────────────────────────────────────
 function hexToRgb(hex){
@@ -521,6 +533,7 @@ function renderVariantChips(){
 
 function setPalVariant(key,btn){
   currentPalVariant=key;
+  localStorage.setItem('pal-variant', key);
   document.querySelectorAll('#palvariant-row .chip').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   if(allData.length) renderDashboard();
@@ -617,7 +630,8 @@ let selectedFilters = {
   ciudad: [],
   tipoSol: [],
   estado: [],
-  solicitante: []
+  solicitante: [],
+  medio: []
 };
 
 // ── APPLY BG THEME ──────────────────────────────────────────────────────────
@@ -649,10 +663,26 @@ function applyBg(name) {
 
 function setBg(name, btn) {
   currentBg = name;
+  localStorage.setItem('bg-theme', name);
   document.querySelectorAll('#bg-row .chip').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   applyBg(name);
 }
+
+// Restaurar el tema de fondo guardado al recargar la página (mismo patrón que
+// orden de gráficos / gráficos visibles / etiquetas / tarjetas, que ya persisten).
+window.addEventListener('DOMContentLoaded', ()=>{
+  const savedBg = localStorage.getItem('bg-theme');
+  if(savedBg && BG_THEMES[savedBg] && savedBg !== 'dark'){
+    const btn = document.querySelector(`#bg-row .chip[data-bg="${savedBg}"]`);
+    if(btn){
+      currentBg = savedBg;
+      document.querySelectorAll('#bg-row .chip').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      applyBg(savedBg);
+    }
+  }
+});
 
 // Retorna la paleta de colores activa (según tipo Categórica/Secuencial/Divergente elegido)
 function PAL()  { return generatePalette(12); }
@@ -1112,6 +1142,7 @@ function populateFilters(){
   fill('content-f-tipo', 'btn-f-tipo', 'tipoSol', 'Todos');
   fill('content-f-estado', 'btn-f-estado', 'estado', 'Todos');
   fill('content-f-solicitante', 'btn-f-solicitante', 'solicitante', 'Todos');
+  fill('content-f-medio', 'btn-f-medio', 'medio', 'Todos');
 }
 
 function setupDropdownToggleListeners() {
@@ -1145,7 +1176,8 @@ function filterData(){
     const tMatch = selectedFilters.tipoSol.length === 0 || selectedFilters.tipoSol.includes(d.tipoSol);
     const eMatch = selectedFilters.estado.length === 0 || selectedFilters.estado.includes(d.estado);
     const sMatch = selectedFilters.solicitante.length === 0 || selectedFilters.solicitante.includes(d.solicitante);
-    return mMatch && dMatch && cMatch && tMatch && eMatch && sMatch;
+    const medMatch = selectedFilters.medio.length === 0 || selectedFilters.medio.includes(d.medio);
+    return mMatch && dMatch && cMatch && tMatch && eMatch && sMatch && medMatch;
   });
 }
 
@@ -1159,6 +1191,7 @@ function resetFilters(){
   document.getElementById('btn-f-tipo').textContent = 'Todos';
   document.getElementById('btn-f-estado').textContent = 'Todos';
   document.getElementById('btn-f-solicitante').textContent = 'Todos';
+  document.getElementById('btn-f-medio').textContent = 'Todos';
   
   populateFilters();
   renderDashboard();
@@ -1306,6 +1339,15 @@ function toggleCardVisible(key,btn){
 }
 renderCardViewChips();
 
+// Mostrar/ocultar todas las tarjetas KPI de una vez (equivalente a showAllCharts/
+// hideAllCharts del sistema de parámetros, aplicado aquí a las tarjetas).
+function setAllCards(visible){
+  visibleCards = visible ? new Set(CARD_DEFS.map(c=>c.key)) : new Set();
+  localStorage.setItem('visible-cards', JSON.stringify([...visibleCards]));
+  renderCardViewChips();
+  if(allData.length) renderDashboard();
+}
+
 let visibleCharts = (function(){
   try{
     const saved = JSON.parse(localStorage.getItem('visible-charts')||'null');
@@ -1335,6 +1377,14 @@ function toggleChartVisible(key,btn){
   if(allData.length) renderDashboard();
 }
 renderChartViewChips();
+
+// Mostrar/ocultar todos los gráficos de una vez.
+function setAllCharts(visible){
+  visibleCharts = visible ? new Set(CHART_DEFS.map(c=>c.key)) : new Set();
+  localStorage.setItem('visible-charts', JSON.stringify([...visibleCharts]));
+  renderChartViewChips();
+  if(allData.length) renderDashboard();
+}
 
 // ── ETIQUETAS EN GRÁFICOS: qué gráficos muestran sus valores (datalabels) ────
 // Independiente de "Gráficos en pantalla": aquí se decide, por gráfico, si se
@@ -1369,6 +1419,14 @@ function toggleLabelVisible(key,btn){
   if(allData.length) renderDashboard();
 }
 renderLabelViewChips();
+
+// Mostrar/ocultar todos los valores (datalabels) de todos los gráficos a la vez.
+function setAllLabels(visible){
+  labelsVisible = visible ? new Set(CHART_DEFS.map(c=>c.key)) : new Set();
+  localStorage.setItem('visible-labels', JSON.stringify([...labelsVisible]));
+  renderLabelViewChips();
+  if(allData.length) renderDashboard();
+}
 
 // ── TEMPLATES ────────────────────────────────────────────────────────────────
 function cardHTML(id,cls,label,value,sub,badge){
