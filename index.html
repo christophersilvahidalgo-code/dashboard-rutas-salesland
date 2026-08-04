@@ -1288,7 +1288,7 @@ const CHART_DEFS = [
   {key:'estado',   boxId:'box-estado',   canvasId:'ch-estado',   title:'Estado de Solicitudes',  sub:'Impactado / Observado / Pendiente',                h:300, build:data=>buildEstado(data)},
   {key:'estadomes',boxId:'box-estadomes',canvasId:'ch-estadomes',title:'Estado por Mes',         sub:'Evolución mensual de estados',                     h:300, build:data=>buildEstadoMes(data)},
   {key:'ciudad',   boxId:'box-ciudad',   canvasId:'ch-ciudad',   title:'Top Ciudades',           sub:'Por volumen de solicitudes',                       h:320, build:data=>buildCiudad(data)},
-  {key:'tipomod',  boxId:'box-tipomod',  canvasId:'ch-tipomod',  title:'Tipo de Modificación',   sub:'Top 10 categorías',                                h:320, build:data=>buildTipoMod(data)},
+  {key:'tipomod',  boxId:'box-tipomod',  canvasId:'ch-tipomod',  title:'Tipo de Modificación',   sub:'Top 10 categorías · por estado',                   h:340, build:data=>buildTipoMod(data)},
   {key:'motivo',   boxId:'box-motivo',   canvasId:'ch-motivo',   title:'Tipo de Modificaciones', sub:'Motivo · color según estado predominante, top 10', h:340, build:data=>buildMotivo(data)},
   {key:'medio',    boxId:'box-medio',    canvasId:'ch-medio',    title:'Medio de Solicitud',     sub:'Canales de ingreso, ordenados por volumen',        h:280, build:data=>buildMedio(data)},
   {key:'sol',      boxId:'box-sol',      canvasId:'ch-sol',      title:'Solicitante',            sub:'Por rol',                                          h:280, build:data=>buildSolicitante(data)},
@@ -1719,25 +1719,52 @@ function buildEstado(data){
   },'estado');
 }
 
+// ── TIPO DE MODIFICACIÓN (barras apiladas por Estado de Solicitud) ──────────
+// Cada categoría de tipoMod se muestra como una sola barra dividida en
+// segmentos (Impactado/Observado/Pendiente), con el valor de cada segmento
+// dentro de él, igual que el gráfico de referencia — así se ve de un vistazo
+// cuántas solicitudes de cada tipo quedaron en cada estado.
 function buildTipoMod(data){
-  const pal=PAL();
   const filt=data.filter(d=>d.tipoMod&&d.tipoMod!=='TIPO DE MODIFICACIÓN'&&d.tipoMod!=='MODIFICACION TIPO');
-  const top=topN(countBy(filt,'tipoMod'),10);
+  const top=topN(countBy(filt,'tipoMod'),10).map(([k])=>k);
+  const labels=top.map(k=>k.replace('MOD. ',''));
+
+  const ds=ESTADO_ORDER.map(estado=>({
+    label:estado,
+    data:top.map(t=>filt.filter(d=>d.tipoMod===t&&d.estado===estado).length),
+    backgroundColor:ECOL(estado)+'d0',borderColor:ECOL(estado),borderWidth:1,borderRadius:4,
+  }));
+
   mkChart('ch-tipomod',{type:'bar',
-    data:{labels:top.map(([k])=>k.replace('MOD. ','')),datasets:[{
-      label:'Cantidad',data:top.map(([,v])=>v),
-      backgroundColor:pal.slice(0,10).map(c=>c+'cc'),borderColor:pal.slice(0,10),borderWidth:1,borderRadius:4,
-    }]},
+    data:{labels,datasets:ds},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{...tip()},
+      plugins:{
+        // Leyenda fija con los 3 estados (Impactado/Observado/Pendiente),
+        // igual que el gráfico de referencia.
+        legend:{
+          display:true,position:'bottom',
+          labels:{
+            boxWidth:10,padding:14,font:{size:11},color:legendColor(),
+            generateLabels:()=>ESTADO_ORDER.map(e=>({
+              text:e.charAt(0)+e.slice(1).toLowerCase(),
+              fillStyle:ECOL(e),strokeStyle:ECOL(e),lineWidth:0,
+            })),
+          }
+        },
+        tooltip:{...tip(),callbacks:{label:ctx=>` ${ctx.dataset.label.charAt(0)}${ctx.dataset.label.slice(1).toLowerCase()}: ${ctx.parsed.x.toLocaleString('es')}`}},
         datalabels:{
-          color:legendColor(),font:{size:11,weight:'700'},
-          anchor:'end',align:'right',clamp:true,
-          formatter:v=>v.toLocaleString('es'),padding:{right:4},
+          display:ctx=>ctx.dataset.data[ctx.dataIndex]>0,
+          color:ctx=>autoLabel(ctx.dataset.backgroundColor),
+          textStrokeColor:ctx=>autoLabelStroke(ctx.dataset.backgroundColor),textStrokeWidth:1.5,
+          font:{size:11,weight:'700'},anchor:'center',align:'center',
+          formatter:v=>v>0?v.toLocaleString('es'):'',
         }
       },
-      scales:{x:{...scaleOpts()},y:{...yCategoryScale(10)}},
-      layout:{padding:{right:60}},
+      scales:{
+        x:{...scaleOpts(),stacked:true},
+        y:{...yCategoryScale(10),stacked:true},
+      },
+      layout:{padding:{right:20}},
     }
   },'tipomod');
 }
