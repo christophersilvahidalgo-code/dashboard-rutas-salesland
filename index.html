@@ -1198,6 +1198,42 @@ function yLabelTicks(fontSize=10){
     callback:function(value){ return wrapTickLabelAuto(this,this.getLabelForValue(value)); },
   };
 }
+
+// Chart.js calcula el ancho del eje Y de forma automática, pero en cuadros
+// angostos ese cálculo puede quedarse corto y termina cortando el inicio del
+// texto (las primeras letras "se comen" fuera del canvas). Para evitarlo,
+// forzamos explícitamente el ancho del eje en `afterFit`, midiendo con
+// measureText el ancho real de la línea más larga que vamos a dibujar
+// (ya envuelta) y asegurando que el eje sea al menos así de ancho.
+function yCategoryScale(fontSize=10){
+  return {
+    ticks:yLabelTicks(fontSize),
+    grid:{display:false},
+    afterFit(scale){
+      try{
+        const labels=(scale.getLabels && scale.getLabels()) || [];
+        const ctx=scale.ctx;
+        ctx.save();
+        ctx.font=`${fontSize}px 'Segoe UI',system-ui,sans-serif`;
+        let maxLineW=0;
+        labels.forEach(l=>{
+          const wrapped=wrapTickLabelAuto(scale,l);
+          const lines=Array.isArray(wrapped)?wrapped:[wrapped];
+          lines.forEach(line=>{
+            const w=ctx.measureText(String(line)).width;
+            if(w>maxLineW) maxLineW=w;
+          });
+        });
+        ctx.restore();
+        const desired=Math.ceil(maxLineW)+18; // pequeño margen para no quedar pegado
+        const chartW=(scale.chart && scale.chart.width) || 360;
+        const capMax=Math.max(70,chartW*0.55);
+        scale.width=Math.min(Math.max(scale.width,desired),capMax);
+      }catch(e){ /* si algo falla, se conserva el ancho ya calculado por Chart.js */ }
+    },
+  };
+}
+
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 function mkChart(id,cfg,labelKey){
   destroyChart(id);
@@ -1645,7 +1681,7 @@ function buildCiudad(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(11),grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{...yCategoryScale(11)}},
       layout:{padding:{right:55}},
     }
   },'ciudad');
@@ -1692,10 +1728,7 @@ function buildTipoMod(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{
-        ticks:yLabelTicks(10),
-        grid:{display:false},
-      }},
+      scales:{x:{...scaleOpts()},y:{...yCategoryScale(10)}},
       layout:{padding:{right:60}},
     }
   },'tipomod');
@@ -1754,7 +1787,7 @@ function buildMotivo(data){
           formatter:v=>v.toLocaleString('es'),padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(10),grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{...yCategoryScale(10)}},
       layout:{padding:{right:60}},
     }
   },'motivo');
@@ -1781,7 +1814,7 @@ function buildMedio(data){
           formatter:v=>`${v.toLocaleString('es')} (${total?Math.round(v/total*100):0}%)`,padding:{right:4},
         }
       },
-      scales:{x:{...scaleOpts()},y:{ticks:yLabelTicks(11),grid:{display:false}}},
+      scales:{x:{...scaleOpts()},y:{...yCategoryScale(11)}},
       layout:{padding:{right:85}},
     }
   },'medio');
