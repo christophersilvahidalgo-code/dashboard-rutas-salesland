@@ -649,6 +649,14 @@ function ECOL(k){
   if(idx === -1) return '#94a3b8';
   return PAL()[idx % PAL().length];
 }
+
+// ── FUNCIÓN PARA OBTENER ESTADOS DINÁMICOS (basado en datos filtrados) ───────
+// Devuelve solo los estados que realmente existen en los datos filtrados,
+// mantiendo el orden de ESTADO_ORDER pero excluyendo los que no tienen registros.
+function getVisibleEstados(data){
+  const estadosPresentes = new Set(data.map(d=>d.estado).filter(Boolean));
+  return ESTADO_ORDER.filter(e=>estadosPresentes.has(e));
+}
 function tickColor()  { return isDarkMode ? '#6b7a99' : '#555e7a'; }
 function gridColor()  { return isDarkMode ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)'; }
 function legendColor(){ return isDarkMode ? '#b0b8d0' : '#334155'; }
@@ -1768,7 +1776,9 @@ function buildTipoMod(data){
   const top=topN(countBy(filt,'tipoMod'),10).map(([k])=>k);
   const labels=top.map(k=>k.replace('MOD. ',''));
 
-  const ds=ESTADO_ORDER.map(estado=>({
+  // CAMBIO: Usar estados dinámicos en lugar de ESTADO_ORDER fijo
+  const visibleEstados = getVisibleEstados(filt);
+  const ds=visibleEstados.map(estado=>({
     label:estado,
     data:top.map(t=>filt.filter(d=>d.tipoMod===t&&d.estado===estado).length),
     backgroundColor:ECOL(estado)+'d0',borderColor:ECOL(estado),borderWidth:1,borderRadius:4,
@@ -1778,13 +1788,13 @@ function buildTipoMod(data){
     data:{labels,datasets:ds},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{
-        // Leyenda fija con los 3 estados (Impactado/Observado/Pendiente),
-        // igual que el gráfico de referencia.
+        // Leyenda DINÁMICA: solo muestra los estados que existen en los datos filtrados.
+        // Se vincula automáticamente al filtro de "Estado" seleccionado.
         legend:{
           display:true,position:'bottom',
           labels:{
             boxWidth:10,padding:14,font:{size:11},color:legendColor(),
-            generateLabels:()=>ESTADO_ORDER.map(e=>({
+            generateLabels:()=>visibleEstados.map(e=>({
               text:e.charAt(0)+e.slice(1).toLowerCase(),
               fillStyle:ECOL(e),strokeStyle:ECOL(e),lineWidth:0,
             })),
@@ -1857,13 +1867,13 @@ function buildMotivo(data){
     }]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{
-        // Leyenda fija con los 3 estados (no depende del dataset, que es uno solo),
-        // igual que el gráfico de referencia: ● Ejecutado ● Observado ● Pendiente.
+        // Leyenda DINÁMICA: solo muestra los estados que existen en los datos filtrados.
+        // Se vincula automáticamente al filtro de "Estado" seleccionado.
         legend:{
           display:true,position:'bottom',
           labels:{
             boxWidth:10,padding:14,font:{size:11},color:legendColor(),
-            generateLabels:()=>ESTADO_ORDER.map(e=>({
+            generateLabels:()=>getVisibleEstados(filt).map(e=>({
               text:e.charAt(0)+e.slice(1).toLowerCase(),
               fillStyle:ECOL(e),strokeStyle:ECOL(e),lineWidth:0,
             })),
